@@ -1,0 +1,15 @@
+{
+  "model": "gpt-5-chat-latest",
+  "messages": [
+    {
+      "role": "user",
+      "content": "can I view the logs of this please\n  \nsudo systemctl status gtg-next.service"
+    }
+  ],
+  "chat_id": null,
+  "stream": true,
+  "temperature": null,
+  "max_tokens": null,
+  "message_count": 1,
+  "last_message": "can I view the logs of this please\n  \nsudo systemctl status gtg-next.service"
+}

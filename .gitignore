@@ -1,0 +1,5 @@
+.opencode/
+.vscode-server/
+.bun/
+*.log
+.DS_Store

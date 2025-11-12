@@ -1,0 +1,17 @@
+{
+  "model": "gpt-5-chat-latest",
+  "lastMessage": "hello",
+  "user": {
+    "id": "b0284dfe-4b93-47d3-9b37-67d53ffe7f14",
+    "name": "Ethan Copping",
+    "email": "ethan@dannybarker.co.uk",
+    "role": "admin"
+  },
+  "timestamp": "2025-11-12T12:46:09.231Z",
+  "logType": "request",
+  "type": "request",
+  "logId": "2025-11-12-12-46-09-6760ae94",
+  "username": "Ethan Copping",
+  "logPath": "/root/owui-toolset/users/Ethan Copping/2025-11-12-12-46-09-6760ae94",
+  "files": null
+}

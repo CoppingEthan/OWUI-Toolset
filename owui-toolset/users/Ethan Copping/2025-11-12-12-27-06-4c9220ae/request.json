@@ -1,0 +1,23 @@
+{
+  "model": "gpt-5-chat-latest",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Please look into this document and create a summary of 1 paragraph and total costs."
+    },
+    {
+      "role": "assistant",
+      "content": "The document outlines Crannull’s phased AI implementation plan prepared by DBWD, aimed at improving efficiency through automation, data handling, and content generation tools [1]. Stage 1, already completed, established a secure AI portal (ai.crannull.co.uk) for consistent, brand‑aligned content production and includes refinements to improve reliability and unify multiple assistants into one. Stage 2 focuses on integrating tools for data manipulation, exporting structured outputs, and syncing live documents from SharePoint/OneDrive for real‑time access and processing, with an estimated development time of 3 weeks plus 1 week of testing. Future stages propose advanced integrations such as CRM linking, AI‑based data cleansing, call transcription summaries, and performance analysis to further enhance business intelligence and automation capabilities.  \n\n**Total Costs:**  \n- Stage 1: £1,600 (one‑off)  \n- Stage 2: £2,000 (one‑off)  \n- Future Stages: To Be Confirmed (TBC)  \n**Total (confirmed): £3,600** [1]"
+    },
+    {
+      "role": "user",
+      "content": "How about these files"
+    }
+  ],
+  "chat_id": null,
+  "stream": true,
+  "temperature": null,
+  "max_tokens": null,
+  "message_count": 3,
+  "last_message": "How about these files"
+}

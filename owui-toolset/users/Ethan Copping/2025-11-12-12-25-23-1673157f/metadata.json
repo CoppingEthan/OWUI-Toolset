@@ -1,0 +1,26 @@
+{
+  "model": "gpt-5-chat-latest",
+  "lastMessage": "Please look into this document and create a summary of 1 paragraph and total costs.",
+  "user": {
+    "id": "b0284dfe-4b93-47d3-9b37-67d53ffe7f14",
+    "name": "Ethan Copping",
+    "email": "ethan@dannybarker.co.uk",
+    "role": "admin"
+  },
+  "timestamp": "2025-11-12T12:25:23.338Z",
+  "logType": "request",
+  "type": "request",
+  "logId": "2025-11-12-12-25-23-1673157f",
+  "username": "Ethan Copping",
+  "logPath": "/root/owui-toolset/users/Ethan Copping/2025-11-12-12-25-23-1673157f",
+  "files": {
+    "count": 1,
+    "files": [
+      {
+        "filename": "Crannull - AI Portals 2025 October.pdf",
+        "size": 493583,
+        "mime_type": "application/pdf"
+      }
+    ]
+  }
+}

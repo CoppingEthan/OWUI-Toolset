@@ -1,0 +1,12 @@
+{
+  "model": "gpt-5-chat-latest",
+  "responseTime": 7.3080689907073975,
+  "responseLength": 1016,
+  "logType": "response",
+  "timestamp": "2025-11-12T12:25:30.628Z",
+  "chatId": null,
+  "type": "response",
+  "logId": "2025-11-12-12-25-30-35b6af18",
+  "username": "Ethan Copping",
+  "logPath": "/root/owui-toolset/users/Ethan Copping/2025-11-12-12-25-30-35b6af18"
+}

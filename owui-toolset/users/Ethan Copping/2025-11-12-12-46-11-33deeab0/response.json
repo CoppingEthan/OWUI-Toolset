@@ -1,0 +1,19 @@
+{
+  "messages": [
+    {
+      "id": "f700ce08-68a9-4c6d-8a14-a1e7ab17c54f",
+      "role": "user",
+      "content": "hello",
+      "timestamp": 1762951568
+    },
+    {
+      "id": "1772e871-e2a2-4409-9913-27a1f9578f60",
+      "role": "assistant",
+      "content": "Hey there! How’s it going?",
+      "timestamp": 1762951568
+    }
+  ],
+  "message_count": 2,
+  "last_assistant_message": "Hey there! How’s it going?",
+  "response_time_seconds": 2.0459530353546143
+}

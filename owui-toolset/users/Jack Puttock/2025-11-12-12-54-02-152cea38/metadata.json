@@ -1,0 +1,17 @@
+{
+  "model": "gpt-5-chat-latest",
+  "lastMessage": "can I view the logs of this please\n  \nsudo systemctl status gtg-next.service",
+  "user": {
+    "id": "76e72931-2cee-4a0c-9b4f-9d9a585afbc3",
+    "name": "Jack Puttock",
+    "email": "jack@dannybarker.co.uk",
+    "role": "user"
+  },
+  "timestamp": "2025-11-12T12:54:02.105Z",
+  "logType": "request",
+  "type": "request",
+  "logId": "2025-11-12-12-54-02-152cea38",
+  "username": "Jack Puttock",
+  "logPath": "/root/owui-toolset/users/Jack Puttock/2025-11-12-12-54-02-152cea38",
+  "files": null
+}

@@ -1,0 +1,20 @@
+{
+  "name": "owui-request-logger",
+  "version": "1.0.0",
+  "description": "OWUI Request Logger API and Web Server",
+  "main": "api.js",
+  "scripts": {
+    "api": "node api.js",
+    "web": "node web.js",
+    "start": "node api.js & node web.js",
+    "test": "node ../tests/test-api.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
