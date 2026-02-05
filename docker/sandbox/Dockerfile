@@ -109,8 +109,9 @@ RUN npm install -g \
     # SVG
     svgo
 
-# Create non-root user
-RUN useradd -m -u 1000 -s /bin/bash sandbox
+# Create non-root user (remove existing UID 1000 user if present, e.g. ubuntu)
+RUN existing=$(id -nu 1000 2>/dev/null) && [ -n "$existing" ] && userdel -r "$existing" || true \
+    && useradd -m -u 1000 -s /bin/bash sandbox
 RUN mkdir -p /workspace && chown sandbox:sandbox /workspace
 
 # Allow sandbox user to install packages to user directory
