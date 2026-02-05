@@ -69,5 +69,8 @@ coverage/
 # Misc
 .cache/
 
+# Runtime
+.owui.pid
+
 # Development working files
 plan.md

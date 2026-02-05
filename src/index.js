@@ -3,6 +3,7 @@
  */
 
 import { spawn } from 'child_process';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,6 +15,10 @@ dotenv.config();
 
 const API_PORT = process.env.PORT || 3000;
 const DASHBOARD_PORT = process.env.DASHBOARD_PORT || 3001;
+const PID_FILE = path.join(__dirname, '..', '.owui.pid');
+
+// Write PID file for deploy script process detection
+fs.writeFileSync(PID_FILE, String(process.pid));
 
 console.log('\n🚀 OWUI Toolset V2 Starting...\n');
 
@@ -36,6 +41,7 @@ apiProcess.on('exit', (code) => {
 // Graceful shutdown
 const shutdown = () => {
   console.log('\n🛑 Shutting down...\n');
+  try { fs.unlinkSync(PID_FILE); } catch {}
   dashboardProcess.kill();
   apiProcess.kill();
   process.exit(0);
