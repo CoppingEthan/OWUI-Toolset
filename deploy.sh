@@ -24,8 +24,6 @@ fi
 # State variables
 IS_EXISTING_INSTALL=false
 REPO_DIR=""
-DOCKERFILE_HASH_BEFORE=""
-DOCKERFILE_HASH_AFTER=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -108,21 +106,6 @@ check_privileges() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Helper: hash a file for change detection
-# ═══════════════════════════════════════════════════════════════════════════
-
-hash_file() {
-    if command -v sha256sum &>/dev/null; then
-        sha256sum "$1" | cut -d' ' -f1
-    elif command -v md5sum &>/dev/null; then
-        md5sum "$1" | cut -d' ' -f1
-    else
-        # Cannot hash; return unique value to force rebuild
-        echo "no-hash-$(date +%s)"
-    fi
-}
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Step 1: Install Git
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -197,11 +180,6 @@ clone_fresh_repo() {
 update_existing_repo() {
     log_info "Updating existing installation at $REPO_DIR..."
 
-    # Capture Dockerfile hash BEFORE pull for smart rebuild comparison
-    if [ -f "$REPO_DIR/docker/sandbox/Dockerfile" ]; then
-        DOCKERFILE_HASH_BEFORE=$(hash_file "$REPO_DIR/docker/sandbox/Dockerfile")
-    fi
-
     cd "$REPO_DIR"
 
     # Stash any unexpected tracked-file changes (safety net)
@@ -224,10 +202,6 @@ update_existing_repo() {
         fi
     fi
 
-    # Capture Dockerfile hash AFTER pull
-    if [ -f "$REPO_DIR/docker/sandbox/Dockerfile" ]; then
-        DOCKERFILE_HASH_AFTER=$(hash_file "$REPO_DIR/docker/sandbox/Dockerfile")
-    fi
 }
 
 acquire_repo() {
@@ -496,42 +470,21 @@ install_npm_deps() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Step 7: Build Docker sandbox image (smart rebuild)
+# Step 7: Build Docker sandbox image
 # ═══════════════════════════════════════════════════════════════════════════
 
 build_sandbox_image() {
     echo ""
-    log_info "Step 7/8: Docker sandbox image..."
+    log_info "Step 7/8: Building sandbox Docker image..."
 
     if [ ! -f "$SCRIPT_DIR/docker/sandbox/Dockerfile" ]; then
         log_error "Dockerfile not found at $SCRIPT_DIR/docker/sandbox/Dockerfile"
         exit 1
     fi
 
-    local needs_rebuild=false
+    $SUDO docker build -t owui-sandbox-base:latest "$SCRIPT_DIR/docker/sandbox/"
 
-    # Fresh install - always build
-    if [ "$IS_EXISTING_INSTALL" = false ]; then
-        needs_rebuild=true
-        log_info "Fresh install: building sandbox image..."
-    # Image doesn't exist at all
-    elif ! $SUDO docker image inspect owui-sandbox-base:latest &>/dev/null; then
-        needs_rebuild=true
-        log_info "Sandbox image not found: building..."
-    # Dockerfile changed during git pull
-    elif [ -n "$DOCKERFILE_HASH_BEFORE" ] && [ -n "$DOCKERFILE_HASH_AFTER" ] && \
-         [ "$DOCKERFILE_HASH_BEFORE" != "$DOCKERFILE_HASH_AFTER" ]; then
-        needs_rebuild=true
-        log_info "Dockerfile changed: rebuilding sandbox image..."
-    else
-        log_success "Sandbox image is up to date (Dockerfile unchanged)"
-        return 0
-    fi
-
-    if [ "$needs_rebuild" = true ]; then
-        $SUDO docker build -t owui-sandbox-base:latest "$SCRIPT_DIR/docker/sandbox/"
-        log_success "Sandbox image built: owui-sandbox-base:latest"
-    fi
+    log_success "Sandbox image built: owui-sandbox-base:latest"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
