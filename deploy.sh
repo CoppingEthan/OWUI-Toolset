@@ -484,6 +484,12 @@ install_npm_deps() {
         exit 1
     fi
 
+    # Install build tools needed by npm packages (phantomjs needs bzip2)
+    if ! command -v bzip2 &> /dev/null; then
+        log_info "Installing build dependencies (bzip2)..."
+        $SUDO $PKG_INSTALL bzip2
+    fi
+
     npm install
 
     log_success "npm dependencies installed"
