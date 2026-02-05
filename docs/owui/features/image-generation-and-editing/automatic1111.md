@@ -1,0 +1,62 @@
+# https://docs.openwebui.com/features/image-generation-and-editing/automatic1111
+
+  * [](/)
+  * [⭐ Features](/features/)
+  * [Create & Edit Images](/category/create--edit-images)
+  * AUTOMATIC1111
+
+
+
+On this page
+
+# AUTOMATIC1111
+
+warning
+
+This tutorial is a community contribution and is not supported by the Open WebUI team. It serves only as a demonstration on how to customize Open WebUI for your specific use case. Want to contribute? Check out the contributing tutorial.
+
+Open WebUI supports image generation through the **AUTOMATIC1111** [API](https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/API). Here are the steps to get started:
+
+### Initial Setup​
+
+  1. Ensure that you have [AUTOMATIC1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) installed.
+  2. Launch AUTOMATIC1111 with additional flags to enable API access:
+
+
+    
+    
+    /webui.sh --api --listen  
+    
+
+  3. For Docker installation of WebUI with the environment variables preset, use the following command:
+
+
+    
+    
+    docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:7860/ -e ENABLE_IMAGE_GENERATION=True -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main  
+    
+
+### Setting Up Open WebUI with AUTOMATIC1111​
+
+  1. In Open WebUI, navigate to the **Admin Panel** > **Settings** > **Images** menu.
+  2. Set the `Image Generation Engine` field to `Default (Automatic1111)`.
+  3. In the API URL field, enter the address where AUTOMATIC1111's API is accessible:
+
+
+
+![Screenshot of the Open WebUI Images settings page with Default \(Automatic1111\) selected and the API URL field highlighted.](/assets/images/automatic1111-settings-3de81295ed8c9764177877ed8fc73439.png)
+    
+    
+    http://<your_automatic1111_address>:7860/  
+    
+
+If you're running a Docker installation of Open WebUI and AUTOMATIC1111 on the same host, use `http://host.docker.internal:7860/` as your address.
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/features/image-generation-and-editing/automatic1111.md)
+
+[PreviousUsage](/features/image-generation-and-editing/usage)[NextComfyUI](/features/image-generation-and-editing/comfyui)
+
+  * Initial Setup
+  * Setting Up Open WebUI with AUTOMATIC1111
+
+

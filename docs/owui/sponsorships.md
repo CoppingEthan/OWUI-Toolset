@@ -1,0 +1,59 @@
+# https://docs.openwebui.com/sponsorships
+
+  * [](/)
+  * 💖 Sponsorships
+
+
+
+On this page
+
+# 💖 Sponsorships
+
+Sponsored by Open WebUI Inc.
+
+[![Open WebUI Inc.](/sponsors/banners/openwebui-banner.png)![Open WebUI Inc.](/sponsors/banners/openwebui-banner-mobile.png)](https://careers.openwebui.com)
+
+**We are hiring!** Shape the way humanity engages with _intelligence_.
+
+## The Impact of Your Support​
+
+[![Image Description](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/tjbck)
+
+As Open WebUI grows, the tasks and challenges we face expand as well. [Tim](/team) is at the heart of this project, tirelessly working to ensure all aspects of Open WebUI not only function but thrive. Yet, imagine the additional improvements we could make with a little extra support.
+
+Consider the practical benefits your organization gains from Open WebUI. A modest contribution from users like you allows us to focus more on refining features and less on managing resources. Each helping hand makes a meaningful difference, aligning our daily realities with our ambitious goals.
+
+We're incredibly thankful to our current sponsors. Your commitment has brought us closer to realizing the full potential of Open WebUI. Every contribution, big or small, strengthens the project and lays the groundwork for its continued success.
+
+Thank you for considering joining us in this practical yet visionary endeavor. Here, every bit of support is not only appreciated—it’s crucial for keeping our project vibrant, dynamic, and responsive to users’ needs.
+
+## Sponsorship Policies​
+
+At Open WebUI, our community always comes first. Sponsors are welcome, but they must respect our community-first approach. This philosophy guides all our sponsorship policies.
+
+### Hard Rules​
+
+These are the non-negotiable rules for sponsors:
+
+  * Sponsors will always be clearly identified as sponsors.
+  * Aggressive sales tactics directed at our community members are strictly prohibited.
+  * We don’t sell personal information about our community members to sponsors (e.g., to add to their mailing list).
+
+
+
+### Soft Rules​
+
+Our community members should not be treated as sales leads.
+
+We expect sponsors to be exemplary community members. It’s acceptable to subtly promote job openings at your company and showcase your product, but hard selling is not allowed. Additionally, do not ask community members to join your mailing list.
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/sponsorships.mdx)
+
+[Previous🤝 Contributing](/contributing)[Next🎨 Brand Guidelines](/brand)
+
+  * The Impact of Your Support
+  * Sponsorship Policies
+    * Hard Rules
+    * Soft Rules
+
+

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(node -e \"\nimport initSqlJs from ''sql.js'';\nimport fs from ''fs'';\n\nconst SQL = await initSqlJs\\(\\);\nconst buffer = fs.readFileSync\\(''./data/metrics.db''\\);\nconst db = new SQL.Database\\(buffer\\);\n\n// Check if table exists and has data\nconsole.log\\(''=== Table Info ===''\\);\nconst tables = db.exec\\(\"\"SELECT name FROM sqlite_master WHERE type=''table''\"\"\\);\nconsole.log\\(''Tables:'', JSON.stringify\\(tables\\)\\);\n\nconsole.log\\(''\\\\n=== Row Count ===''\\);\nconst count = db.exec\\(''SELECT COUNT\\(*\\) as count FROM request_metrics''\\);\nconsole.log\\(''Count:'', JSON.stringify\\(count\\)\\);\n\nconsole.log\\(''\\\\n=== Recent Rows ===''\\);\nconst rows = db.exec\\(''SELECT id, timestamp, user_email, conversational_model, input_tokens, output_tokens FROM request_metrics ORDER BY id DESC LIMIT 5''\\);\nconsole.log\\(''Rows:'', JSON.stringify\\(rows, null, 2\\)\\);\n\nconsole.log\\(''\\\\n=== Current SQLite Time ===''\\);\nconst time = db.exec\\(\"\"SELECT datetime\\(''now''\\) as utc, datetime\\(''now'', ''localtime''\\) as local\"\"\\);\nconsole.log\\(''Time:'', JSON.stringify\\(time\\)\\);\n\ndb.close\\(\\);\n\")",
+      "Bash(dir:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(printf:*)",
+      "Bash(cd:*)",
+      "Bash(find:*)",
+      "Bash(node --check:*)",
+      "Bash(node -e \"\nimport initSqlJs from ''sql.js'';\nimport fs from ''fs'';\n\nconst SQL = await initSqlJs\\(\\);\nconst buffer = fs.readFileSync\\(''./data/metrics.db''\\);\nconst db = new SQL.Database\\(buffer\\);\n\n// Get full tool result for request 11\nconst toolStmt = db.prepare\\(''SELECT tool_result FROM tool_calls WHERE request_id = 11''\\);\ntoolStmt.step\\(\\);\nconst result = toolStmt.getAsObject\\(\\).tool_result;\ntoolStmt.free\\(\\);\nconsole.log\\(''=== FULL TOOL RESULT FOR REQUEST #11 ===''\\);\nconsole.log\\(result\\);\n\ndb.close\\(\\);\n\")",
+      "Bash(npm run dashboard:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm start)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(node:*)"
+    ]
+  }
+}

@@ -1,0 +1,264 @@
+# https://docs.openwebui.com/troubleshooting/multi-replica
+
+  * [](/)
+  * [ 🛠️ Troubleshooting](/troubleshooting/)
+  * Multi-Replica / High Availability / Concurrency
+
+
+
+On this page
+
+# Multi-Replica, High Availability & Concurrency Troubleshooting
+
+This guide addresses common issues encountered when deploying Open WebUI in **multi-replica** environments (e.g., Kubernetes, Docker Swarm) or when using **multiple workers** (`UVICORN_WORKERS > 1`) for increased concurrency.
+
+## Core Requirements Checklist​
+
+Before troubleshooting specific errors, ensure your deployment meets these **absolute requirements** for a multi-replica setup. Missing any of these will cause instability, login loops, or data loss.
+
+  1. **Shared Secret Key:** [`WEBUI_SECRET_KEY`](/getting-started/env-configuration#webui_secret_key) **MUST** be identical on all replicas.
+  2. **External Database:** You **MUST** use an external PostgreSQL database (see [`DATABASE_URL`](/getting-started/env-configuration#database_url)). SQLite is **NOT** supported for multiple instances.
+  3. **Redis for WebSockets:** [`ENABLE_WEBSOCKET_SUPPORT=True`](/getting-started/env-configuration#enable_websocket_support) and [`WEBSOCKET_MANAGER=redis`](/getting-started/env-configuration#websocket_manager) with a valid [`WEBSOCKET_REDIS_URL`](/getting-started/env-configuration#websocket_redis_url) are required.
+  4. **Shared Storage:** A persistent volume (RWX / ReadWriteMany if possible, or ensuring all replicas map to the same underlying storage for `data/`) is critical for RAG (uploads/vectors) and generated images.
+  5. **External Vector Database (Recommended):** While embedded Chroma works with shared storage, using a dedicated external Vector DB (e.g., [PGVector](/getting-started/env-configuration#pgvector_db_url), Milvus, Qdrant) is **highly recommended** to avoid file locking issues and improve performance.
+  6. **Database Session Sharing (Optional):** For PostgreSQL deployments with adequate resources, consider enabling [`DATABASE_ENABLE_SESSION_SHARING=True`](/getting-started/env-configuration#database_enable_session_sharing) to improve performance under high concurrency.
+
+
+
+* * *
+
+## Common Issues​
+
+### 1\. Login Loops / 401 Unauthorized Errors​
+
+**Symptoms:**
+
+  * You log in successfully, but the next click logs you out.
+  * You see "Unauthorized" or "401" errors in the browser console immediately after login.
+  * "Error decrypting tokens" appears in logs.
+
+
+
+**Cause:** Each replica is using a different `WEBUI_SECRET_KEY`. When Replica A issues a session token (JWT), Replica B rejects it because it cannot verify the signature with its own different key.
+
+**Solution:** Set the `WEBUI_SECRET_KEY` environment variable to the **same** strong, random string on all backend replicas.
+    
+    
+    # Example in Kubernetes/Compose  
+    env:  
+      - name: WEBUI_SECRET_KEY  
+        value: "your-super-secure-static-key-here"  
+    
+
+### 2\. WebSocket 403 Errors / Connection Failures​
+
+**Symptoms:**
+
+  * Chat stops responding or hangs.
+  * Browser console shows `WebSocket connection failed: 403 Forbidden` or `Connection closed`.
+  * Logs show `engineio.server: https://your-domain.com is not an accepted origin`.
+
+
+
+**Cause:**
+
+  * **CORS:** The load balancer or ingress origin does not match the allowed origins.
+  * **Missing Redis:** WebSockets are defaulting to in-memory, so events on Replica A (e.g., LLM generation finish) are not broadcast to the user connected to Replica B.
+
+
+
+**Solution:**
+
+  1. **Configure CORS:** Ensure [`CORS_ALLOW_ORIGIN`](/getting-started/env-configuration#cors_allow_origin) includes your public domain _and_ http/https variations.
+
+If you see logs like `engineio.base_server:_log_error_once:354 - https://yourdomain.com is not an accepted origin`, you must update this variable. It accepts a **semicolon-separated list** of allowed origins.
+
+**Example:**
+         
+         CORS_ALLOW_ORIGIN="https://chat.yourdomain.com;http://chat.yourdomain.com;https://yourhostname;http://localhost:3000"  
+         
+
+_Add all valid IPs, Domains, and Hostnames that users might use to access your Open WebUI._
+
+  2. **Enable Redis for WebSockets:** Ensure these variables are set on **all** replicas:
+         
+         ENABLE_WEBSOCKET_SUPPORT=True  
+         WEBSOCKET_MANAGER=redis  
+         WEBSOCKET_REDIS_URL=redis://your-redis-host:6379/0  
+         
+
+
+
+
+### 3\. "Model Not Found" or Configuration Mismatch​
+
+**Symptoms:**
+
+  * You enable a model or change a setting in the Admin UI, but other users (or you, after a refresh) don't see the change.
+  * Chats fail with "Model not found" intermittently.
+
+
+
+**Cause:**
+
+  * **Configuration Sync:** Replicas are not synced. Open WebUI uses Redis Pub/Sub to broadcast configuration changes (like toggling a model) to all other instances.
+  * **Missing Redis:** If `REDIS_URL` is not set, configuration changes stay local to the instance where the change was made.
+
+
+
+**Solution:** Set `REDIS_URL` to point to your shared Redis instance. This enables the Pub/Sub mechanism for real-time config syncing.
+    
+    
+    REDIS_URL=redis://your-redis-host:6379/0  
+    
+
+### 4\. Database Corruption / "Locked" Errors​
+
+**Symptoms:**
+
+  * Logs show `database is locked` or severe SQL errors.
+  * Data saved on one instance disappears on another.
+
+
+
+**Cause:** Using **SQLite** with multiple replicas. SQLite is a file-based database and does not support concurrent network writes from multiple containers.
+
+**Solution:** Migrate to **PostgreSQL**. Update your connection string:
+    
+    
+    DATABASE_URL=postgresql://user:password@postgres-host:5432/openwebui  
+    
+
+### 5\. Uploaded Files or RAG Knowledge Inaccessible​
+
+**Symptoms:**
+
+  * You upload a file (for RAG) on one instance, but the model cannot find it later.
+  * Generated images appear as broken links.
+
+
+
+**Cause:** The `/app/backend/data` directory is not shared or is not consistent across replicas. If User A uploads a file to Replica 1, and the next request hits Replica 2, Replica 2 won't have the file physically on disk.
+
+**Solution:**
+
+  * **Kubernetes:** Use a `PersistentVolumeClaim` with `ReadWriteMany` (RWX) access mode if your storage provider supports it (e.g., NFS, CephFS, AWS EFS).
+  * **Docker Swarm/Compose:** Mount a shared volume (e.g., NFS mount) to `/app/backend/data` on all containers.
+
+
+
+### 6\. Slow Performance in Cloud vs. Local Kubernetes​
+
+**Symptoms:**
+
+  * Open WebUI performs well locally but experiences significant degradation or timeouts when deployed to cloud providers (AKS, EKS, GKE).
+  * Performance drops sharply under concurrent load despite adequate resource allocation.
+
+
+
+**Cause:** This is typically caused by infrastructure latency (Network Latency to the database or Disk I/O latency for SQLite) that is inherently higher in cloud environments compared to local NVMe/SSD storage and local networks.
+
+**Solution:** Refer to the **[Cloud Infrastructure Latency](/troubleshooting/performance#%EF%B8%8F-cloud-infrastructure-latency)** section in the Performance Guide for a detailed breakdown of diagnosis and mitigation strategies.
+
+If you need more tips for performance improvements, check out the full [Optimization & Performance Guide](/troubleshooting/performance).
+
+### 7\. Optimizing Database Performance​
+
+For PostgreSQL deployments with adequate resources, consider these optimizations:
+
+#### Database Session Sharing​
+
+Enabling session sharing can improve performance under high concurrency:
+    
+    
+    DATABASE_ENABLE_SESSION_SHARING=true  
+    
+
+See [DATABASE_ENABLE_SESSION_SHARING](/getting-started/env-configuration#database_enable_session_sharing) for details.
+
+#### Connection Pool Sizing​
+
+If you experience `QueuePool limit reached` errors or connection timeouts under high concurrency, increase the pool size:
+    
+    
+    DATABASE_POOL_SIZE=15 (or higher)  
+    DATABASE_POOL_MAX_OVERFLOW=20 (or higher)  
+    
+
+**Important:** The combined total (`DATABASE_POOL_SIZE` \+ `DATABASE_POOL_MAX_OVERFLOW`) should remain well below your database's `max_connections` limit. PostgreSQL defaults to 100 max connections, so keep the combined total under 50-80 per Open WebUI instance to leave room for other clients and maintenance operations.
+
+See [DATABASE_POOL_SIZE](/getting-started/env-configuration#database_pool_size) for details.
+
+* * *
+
+## Deployment Best Practices​
+
+### Updates and Migrations​
+
+Critical: Avoid Concurrent Migrations
+
+**Always ensure only one process is running database migrations when upgrading Open WebUI versions.**
+
+Database migrations run automatically on startup. If multiple replicas (or multiple workers within a single container) start simultaneously with a new version, they may try to run migrations concurrently, potentially leading to race conditions or database schema corruption.
+
+**Safe Update Procedure:**
+
+There are two ways to safely handle migrations in a multi-replica environment:
+
+#### Option 1: Designate a Master Migration Pod (Recommended)​
+
+  1. Identify one pod/replica as the "master" for migrations.
+  2. Set `ENABLE_DB_MIGRATIONS=True` (default) on the master pod.
+  3. Set `ENABLE_DB_MIGRATIONS=False` on all other pods.
+  4. When updating, the master pod will handle the database schema update while other pods skip the migration step.
+
+
+
+#### Option 2: Scale Down During Update​
+
+  1. **Scale Down:** Set replicas to `1` (and ensure `UVICORN_WORKERS=1`).
+  2. **Update Image:** Update the image or version.
+  3. **Wait for Health Check:** Wait for the single instance to start fully and complete migrations.
+  4. **Scale Up:** Increase replicas back to your desired count.
+
+
+
+### Session Affinity (Sticky Sessions)​
+
+While Open WebUI is designed to be stateless with proper Redis configuration, enabling **Session Affinity** (Sticky Sessions) at your Load Balancer / Ingress level can improve performance and reduce occasional jitter in WebSocket connections.
+
+  * **Nginx Ingress:** `nginx.ingress.kubernetes.io/affinity: "cookie"`
+  * **AWS ALB:** Enable Target Group Stickiness.
+
+
+
+* * *
+
+## Related Documentation​
+
+  * [Environment Variable Configuration](/getting-started/env-configuration)
+  * [Optimization, Performance & RAM Usage](/troubleshooting/performance)
+  * [Troubleshooting Connection Errors](/troubleshooting/connection-error)
+  * [Logging Configuration](/getting-started/advanced-topics/logging)
+
+
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/troubleshooting/multi-replica.mdx)
+
+[PreviousTroubleshooting Web Search](/troubleshooting/web-search)[NextOptimization, Performance & RAM Usage](/troubleshooting/performance)
+
+  * Core Requirements Checklist
+  * Common Issues
+    * 1\. Login Loops / 401 Unauthorized Errors
+    * 2\. WebSocket 403 Errors / Connection Failures
+    * 3\. "Model Not Found" or Configuration Mismatch
+    * 4\. Database Corruption / "Locked" Errors
+    * 5\. Uploaded Files or RAG Knowledge Inaccessible
+    * 6\. Slow Performance in Cloud vs. Local Kubernetes
+    * 7\. Optimizing Database Performance
+  * Deployment Best Practices
+    * Updates and Migrations
+    * Session Affinity (Sticky Sessions)
+  * Related Documentation
+
+

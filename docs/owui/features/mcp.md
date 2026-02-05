@@ -1,0 +1,162 @@
+# https://docs.openwebui.com/features/mcp
+
+  * [](/)
+  * [⭐ Features](/features/)
+  * Model Context Protocol (MCP)
+
+
+
+On this page
+
+# Model Context Protocol (MCP)
+
+Open WebUI natively supports **MCP (Model Context Protocol)** starting in **v0.6.31**. This page shows how to enable it quickly, harden it for production, and troubleshoot common snags.
+
+info
+
+Requires **Open WebUI v0.6.31+**.
+
+Prerequisite: WEBUI_SECRET_KEY
+
+You **MUST** set the `WEBUI_SECRET_KEY` environment variable in your Docker setup. Without it, **OAuth-connected MCP tools (like Notion)** will **break** every time you restart or recreate the container (Error: `Error decrypting tokens`), forcing you to re-authenticate everything.
+
+## 🚀 Quick start​
+
+  1. Open **⚙️ Admin Settings → External Tools**.
+  2. Click **\+ (Add Server)**.
+  3. Set **Type** to **MCP (Streamable HTTP)**.
+  4. Enter your **Server URL** and **Auth** details (OAuth 2.1, if required).
+  5. **Save**. If prompted, restart Open WebUI.
+
+
+
+You can now call tools exposed by your MCP server from Open WebUI.
+
+Common Mistake: Wrong Connection Type
+
+If you are adding an MCP server, make sure **Type** is set to **MCP (Streamable HTTP)** , not **OpenAPI**.
+
+Entering MCP-style configuration (with `mcpServers` in JSON) into an OpenAPI connection will cause the UI to crash or display an infinite loading screen. If you encounter this:
+
+  1. Disable the problematic tool connection via Admin Settings
+  2. Re-add it with the correct **Type** set to **MCP**
+
+
+
+## 🧭 When to use MCP vs OpenAPI​
+
+tip
+
+For most deployments, **OpenAPI** remains the **preferred** integration path.
+
+Choose **OpenAPI** if you want:
+
+  * **Enterprise readiness** : deep SSO, API gateways, audit, quotas, typed SDKs.
+  * **Operational resilience** : standard HTTP verbs, idempotency, caching, rich error codes.
+  * **Observability** : first-class tracing and policy integration.
+
+
+
+Choose **MCP (Streamable HTTP)** if you need:
+
+  * A **common tool protocol** already used by your MCP servers/clients.
+  * **Streamed** tool events over HTTP with emerging ecosystem support.
+
+
+
+> You don’t have to pick one: many teams expose OpenAPI internally and **wrap MCP** at the edge for specific clients.
+
+warning
+
+Browser-based, multi-user deployments increase the surface area (CORS/CSRF, per-user isolation, reconnects). Review your org’s auth, proxy, and rate-limiting policies before exposing MCP externally.
+
+## ⚙️ Configuration Best Practices​
+
+### Authentication Modes​
+
+  * **None** : Use this for **local MCP servers** or internal networks where no token is required.
+    * **⚠️ Important** : Default to "None" unless your server strictly requires a token. Selecting "Bearer" without providing a key sends an empty Authorization header (`Authorization: Bearer`), which causes many servers to reject the connection immediately.
+  * **Bearer** : Use this **only** if your MCP server requires a specific API token. You **must** populate the "Key" field.
+  * **OAuth 2.1** : For secured, enterprise deployments requiring Identity Provider flows.
+
+
+
+### Connection URLs​
+
+If you are running Open WebUI in **Docker** and your MCP server is on the **host machine** :
+
+  * Use `http://host.docker.internal:<port>` (e.g., `http://host.docker.internal:3000/sse`) instead of `localhost`.
+
+
+
+### Function Name Filter List​
+
+This field restricts which tools are exposed to the LLM.
+
+  * **Default** : Leave empty to expose all tools (in most cases).
+  * **Workaround** : If you encounter connection errors with an empty list, try adding a single comma (`,`) to this field. This forces the system to treat it as a valid (but empty) filter, potentially bypassing some parsing issues.
+
+
+
+## Troubleshooting​
+
+### "Failed to connect to MCP server"​
+
+**Symptom** : The chat shows "Failed to connect to MCP server" when using a tool, even if the **Verify Connection** button in settings says "Connected".
+
+**Solutions** :
+
+  1. **Check Authentication** : Ensure you haven't selected `Bearer` without a key. Switch to `None` if no token is needed.
+  2. **Filter List Bug** : If the "Function Name Filter List" is empty, try adding a comma (`,`) to it.
+
+
+
+### Infinite loading screen after adding External Tool​
+
+**Symptom** : After adding an External Tool connection, the frontend gets stuck on a loading spinner. The browser console shows an error like `Cannot convert undefined or null to object at Object.entries`.
+
+**Cause** : You likely configured an **MCP server** using the **OpenAPI** connection type, or entered MCP-style JSON (containing `mcpServers`) into an OpenAPI connection.
+
+**Solution** :
+
+  1. Open **Admin Settings → External Tools** (the sidebar still loads)
+  2. **Disable** or **delete** the problematic tool connection
+  3. Refresh the page (Ctrl+F5)
+  4. Re-add the connection with the correct **Type** set to **MCP (Streamable HTTP)**
+
+
+
+## ❓ FAQ​
+
+**Do you support stdio or SSE transports?**
+
+Native MCP support in Open WebUI is **Streamable HTTP only**. This design choice reflects our architecture: Open WebUI is a **web-based, multi-tenant environment** , not a local desktop process.
+
+Browsers operate within strict **sandboxed and event-driven HTTP constraints** , making long-lived stdio or SSE connections difficult to maintain securely across users and sessions.
+
+If you need to bridge those other MCP transports, check out [**mcpo**](https://github.com/open-webui/mcpo) — an open-source proxy that translates **stdio or SSE-based MCP servers into OpenAPI-compatible endpoints**. It effectively lets you run traditional MCP tools inside Open WebUI without modifying their transport layer.
+
+**Is MCP considered stable here?**
+
+Supported and improving. The broader ecosystem is still evolving; expect occasional breaking changes.
+
+**Can I mix OpenAPI and MCP tools?**
+
+Yes. Many deployments do both.
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/features/mcp.mdx)
+
+[PreviousEvaluation](/features/evaluation/)[NextNotes](/features/notes)
+
+  * 🚀 Quick start
+  * 🧭 When to use MCP vs OpenAPI
+  * ⚙️ Configuration Best Practices
+    * Authentication Modes
+    * Connection URLs
+    * Function Name Filter List
+  * Troubleshooting
+    * "Failed to connect to MCP server"
+    * Infinite loading screen after adding External Tool
+  * ❓ FAQ
+
+

@@ -1,0 +1,336 @@
+# https://docs.openwebui.com/tutorials/tips/one-click-ollama-launcher
+
+  * [](/)
+  * [ 🎓 Tutorials](/category/-tutorials)
+  * [Tips & Tricks](/category/tips--tricks)
+  * One-Click Ollama + Open WebUI Launcher
+
+
+
+On this page
+
+warning
+
+This tutorial is a community contribution and is not supported by the Open WebUI team. It serves only as a demonstration on how to customize Open WebUI for your specific use case. Want to contribute? Check out the contributing tutorial.
+
+# One-Click Ollama + Open WebUI Launcher (Linux)
+
+This tutorial shows you how to create a convenient desktop launcher that automatically starts both Ollama and Open WebUI services with a single click, then opens your browser to the correct local address. This is perfect for users who have Open WebUI installed in a conda environment and want a streamlined startup experience.
+
+## Prerequisites​
+
+Before starting this tutorial, ensure you have:
+
+  * **Linux system** with GNOME desktop environment (or compatible terminal)
+  * **Ollama installed** as a system service
+  * **Open WebUI installed** in a conda environment
+  * **Basic terminal knowledge** and sudo access
+
+
+
+## Overview​
+
+This solution creates three components:
+
+  1. A script to properly stop the Ollama service (prevents port conflicts)
+  2. A main startup script that launches both services in separate terminal tabs
+  3. A desktop entry for one-click access from your application menu
+
+
+
+## Step 1: Create the Ollama Stop Script​
+
+First, we'll create a script to cleanly stop the Ollama service. This prevents the common "address already in use" error when restarting Ollama.
+
+Create a directory for your scripts and the stop script:
+    
+    
+    mkdir -p ~/ollama-open-webui  
+    cd ~/ollama-open-webui  
+    
+
+Create `stop_ollama.sh`:
+    
+    
+    nano stop_ollama.sh  
+    
+
+Add the following content:
+    
+    
+    #!/bin/bash  
+    systemctl stop ollama  
+    
+
+Make the script executable:
+    
+    
+    chmod +x ~/ollama-open-webui/stop_ollama.sh  
+    
+
+## Step 2: Configure Sudo Permissions​
+
+To avoid entering your password every time the script runs, we'll configure sudo to allow passwordless execution of our stop script.
+
+**⚠️ Important:** This step requires careful attention to security. Only grant permissions to the specific script path.
+
+Open the sudo configuration:
+    
+    
+    sudo visudo  
+    
+
+Add this line at the bottom of the file (replace `yourusername` with your actual username):
+    
+    
+    yourusername ALL=(ALL) NOPASSWD: /home/yourusername/ollama-open-webui/stop_ollama.sh  
+    
+
+Save and exit the editor (in nano: `Ctrl+X`, then `Y`, then `Enter`).
+
+## Step 3: Create the Main Startup Script​
+
+Now create the main script that orchestrates the entire startup process.
+
+Create `start_services.sh`:
+    
+    
+    nano ~/ollama-open-webui/start_services.sh  
+    
+
+Add the following content (make sure to replace `yourusername` with your actual username and `openwebui` with your actual conda environment name):
+    
+    
+    #!/usr/bin/env bash  
+      
+    ######################################################  
+      
+    #  A script to start up Ollama and Open WebUI       #  
+      
+    ######################################################  
+      
+    # Stop Ollama service to prevent port conflicts  
+    sudo /home/yourusername/ollama-open-webui/stop_ollama.sh  
+      
+    # Start Ollama in a new terminal tab  
+    gnome-terminal --tab --title="Ollama" -- bash -i -c "  
+        echo 'Starting Ollama service...';  
+        ollama serve;  
+        exec bash  
+    "  
+      
+    # Start Open WebUI in another new terminal tab  
+    gnome-terminal --tab --title="Open-WebUI" -- bash -i -c "  
+        echo 'Activating conda environment and starting Open WebUI...';  
+        conda activate openwebui;  
+        open-webui serve;  
+        exec bash  
+    "  
+      
+    # Open browser tab after services have time to start  
+    gnome-terminal --tab --title="Browser" -- bash -i -c "  
+        echo 'Waiting for services to start...';  
+        sleep 5;  
+        echo 'Opening browser...';  
+        xdg-open http://localhost:8080/;  
+        exec bash  
+    "  
+      
+    echo "All services are starting. Check the terminal tabs for status."  
+    
+
+Make the script executable:
+    
+    
+    chmod +x ~/ollama-open-webui/start_services.sh  
+    
+
+## Step 4: Test the Script​
+
+Before creating the desktop entry, test your script to ensure it works:
+    
+    
+    ~/ollama-open-webui/start_services.sh  
+    
+
+You should see:
+
+  * Three new terminal tabs opening
+  * Ollama starting in the first tab
+  * Open WebUI starting in the second tab (after conda activation)
+  * Your default browser opening to `http://localhost:8080/` after a 5-second delay
+
+
+
+If there are any errors, check that:
+
+  * Your conda environment name is correct
+  * Ollama is properly installed
+  * Open WebUI is installed in the specified conda environment
+
+
+
+## Step 5: Create the Desktop Entry​
+
+Create a desktop entry file to make this accessible from your application menu:
+    
+    
+    nano ~/.local/share/applications/start_ollama_webui.desktop  
+    
+
+Add the following content (replace `yourusername` with your actual username):
+    
+    
+    [Desktop Entry]  
+    Name=Ollama + Open WebUI  
+    Comment=Start Ollama and Open WebUI services with one click  
+    Exec=/home/yourusername/ollama-open-webui/start_services.sh  
+    Icon=utilities-terminal  
+    Terminal=true  
+    Type=Application  
+    Categories=Development;Utility;  
+    
+
+Make the desktop entry executable:
+    
+    
+    chmod +x ~/.local/share/applications/start_ollama_webui.desktop  
+    
+
+## Step 6: Optional Customizations​
+
+### Custom Icon​
+
+You can download an Ollama icon and use it instead of the default terminal icon:
+
+  1. Download an icon (PNG format recommended) and save it as `~/ollama-open-webui/ollama_icon.png`
+  2. Update the desktop entry's `Icon=` line to point to your icon:
+         
+         Icon=/home/yourusername/ollama-open-webui/ollama_icon.png  
+         
+
+
+
+
+### Different Terminal Emulator​
+
+If you're not using GNOME Terminal, modify the `gnome-terminal` commands in the startup script. For example:
+
+  * **For Konsole (KDE):** Replace `gnome-terminal --tab --title="Title"` with `konsole --new-tab -e`
+  * **For xterm:** Use `xterm -T "Title" -e`
+  * **For Terminal (XFCE):** Use `xfce4-terminal --tab --title="Title" --command`
+
+
+
+### Different Conda Environment​
+
+If your Open WebUI is installed in a different conda environment, update the environment name in the startup script:
+    
+    
+    conda activate your-environment-name;  
+    
+
+## Usage​
+
+After completing all steps:
+
+  1. **From Application Menu:** Search for "Ollama" or "Open WebUI" in your application launcher
+  2. **From Desktop:** If you copied the desktop entry to your desktop, double-click it
+  3. **From Terminal:** Run the script directly with `~/ollama-open-webui/start_services.sh`
+
+
+
+The launcher will:
+
+  * Stop any existing Ollama service
+  * Start Ollama in a new terminal tab
+  * Start Open WebUI in another terminal tab
+  * Automatically open your browser to the correct URL
+  * Keep all terminal tabs open so you can monitor the services
+
+
+
+## Troubleshooting​
+
+### Permission Denied Errors​
+
+If you get permission denied errors:
+
+  * Ensure all scripts have execute permissions (`chmod +x`)
+  * Verify the sudo configuration is correct
+  * Check that file paths match your actual username
+
+
+
+### Services Don't Start​
+
+If services fail to start:
+
+  * Check that Ollama is properly installed system-wide
+  * Verify your conda environment name is correct
+  * Ensure Open WebUI is installed in the specified environment
+  * Look at the terminal output for specific error messages
+
+
+
+### Browser Doesn't Open​
+
+If the browser doesn't open automatically:
+
+  * Check that `xdg-open` is available on your system
+  * Try manually opening `http://localhost:8080/` in your browser
+  * Increase the sleep duration in the script if services need more time to start
+
+
+
+### Different Desktop Environment​
+
+For non-GNOME environments:
+
+  * Replace `gnome-terminal` with your system's terminal emulator
+  * Adjust the command-line arguments as needed for your terminal
+  * Test the modified script before creating the desktop entry
+
+
+
+## Security Considerations​
+
+This setup requires sudo access for stopping the Ollama service. The sudo configuration is limited to a specific script to minimize security risks, but you should:
+
+  * Regularly review your sudo configuration
+  * Ensure the stop script only contains the necessary systemctl command
+  * Keep your scripts in a secure location with appropriate permissions
+
+
+
+## Conclusion​
+
+You now have a convenient one-click solution for starting your Ollama and Open WebUI setup! This approach is particularly useful for development workflows where you frequently start and stop these services.
+
+The terminal tabs remain open so you can monitor service logs and easily stop the services when needed (Ctrl+C in each respective tab).
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/tutorials/tips/one-click-ollama-launcher.mdx)
+
+[PreviousSQLite Database Overview](/tutorials/tips/sqlite-database)[NextDual OAuth Configuration](/tutorials/tips/dual-oauth-configuration)
+
+  * Prerequisites
+  * Overview
+  * Step 1: Create the Ollama Stop Script
+  * Step 2: Configure Sudo Permissions
+  * Step 3: Create the Main Startup Script
+  * Step 4: Test the Script
+  * Step 5: Create the Desktop Entry
+  * Step 6: Optional Customizations
+    * Custom Icon
+    * Different Terminal Emulator
+    * Different Conda Environment
+  * Usage
+  * Troubleshooting
+    * Permission Denied Errors
+    * Services Don't Start
+    * Browser Doesn't Open
+    * Different Desktop Environment
+  * Security Considerations
+  * Conclusion
+
+

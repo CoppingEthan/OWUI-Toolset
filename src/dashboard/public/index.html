@@ -1,0 +1,2388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OWUI Toolset V2 - Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --sidebar-width: 220px;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* Fine grain noise overlay - high frequency for per-pixel grain */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            opacity: 0.035;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Glass effect mixin */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+        }
+
+        /* Layout with sidebar */
+        .dashboard-layout {
+            display: flex;
+            min-height: 100vh;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--glass-border);
+            padding: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-stats {
+            flex: 1;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .sidebar-header {
+            margin-bottom: 30px;
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .sidebar-header p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .stat-item {
+            margin-bottom: 20px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .stat-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-item h3 {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .stat-item .value {
+            font-size: 26px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-item .subvalue {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .stat-item .stat-sublabel {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .stat-item .stat-subvalue {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent-purple);
+            margin-top: 8px;
+        }
+
+        .cache-tokens {
+            font-size: 12px;
+            color: var(--accent-green, #10b981);
+            font-weight: 500;
+        }
+
+        .tool-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .tool-stat:last-child {
+            border-bottom: none;
+        }
+
+        .tool-stat .tool-name {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .tool-stat .tool-count {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-purple);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .time-range-selector {
+            display: flex;
+            gap: 6px;
+        }
+
+        .time-range-btn {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        .time-range-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent-blue);
+            transform: translateY(-1px);
+        }
+
+        .time-range-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-color: transparent;
+            color: white;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .domain-filter {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            min-width: 140px;
+            transition: all 0.3s ease;
+        }
+
+        .domain-filter:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--accent-blue);
+        }
+
+        .domain-filter:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+        }
+
+        .domain-filter option {
+            background: #1e293b;
+            color: var(--text-primary);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .live-indicator.connected {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+        }
+
+        .live-indicator.disconnected {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .connected .live-dot {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .disconnected .live-dot {
+            background: var(--accent-red);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .sync-timer {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: 4px;
+        }
+
+        .settings-btn {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s ease;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .settings-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent-purple);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .settings-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-header h2 {
+            font-size: 16px;
+            color: var(--text-primary);
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .chart-toggle {
+            display: flex;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 3px;
+            border-radius: 8px;
+        }
+
+        .chart-toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .chart-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+
+        .chart-toggle-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+        }
+
+        /* Table Container */
+        .table-container {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            overflow-x: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .table-container h2 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        thead tr {
+            border-radius: 8px;
+        }
+
+        thead th:first-child {
+            border-radius: 8px 0 0 8px;
+        }
+
+        thead th:last-child {
+            border-radius: 0 8px 8px 0;
+        }
+
+        th {
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 13px;
+            color: var(--text-primary);
+            vertical-align: top;
+        }
+
+        tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(139, 92, 246, 0.08);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .badge-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .model-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .model-badge.anthropic {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .model-badge.openai {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        /* Expandable rows */
+        .expand-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            font-size: 16px;
+            transition: transform 0.2s;
+        }
+
+        .expand-btn.expanded {
+            transform: rotate(90deg);
+        }
+
+        .expand-btn:hover {
+            color: var(--accent-blue);
+        }
+
+        .request-details {
+            display: none;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-top: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .request-details.visible {
+            display: block;
+        }
+
+        .message-block {
+            margin-bottom: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .message-block.user {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .message-block.assistant {
+            background: rgba(16, 185, 129, 0.1);
+            border-left: 3px solid var(--accent-green);
+        }
+
+        .message-block.tool {
+            background: rgba(139, 92, 246, 0.1);
+            border-left: 3px solid var(--accent-purple);
+        }
+
+        .message-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .message-content {
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .tool-params {
+            font-family: monospace;
+            font-size: 11px;
+            color: var(--accent-yellow);
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: rgba(30, 41, 59, 0.9);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .modal-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .modal-section h3 {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .modal-section p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .confirm-text {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .confirm-text:focus {
+            outline: none;
+            border-color: var(--accent-red);
+        }
+
+        .danger-btn {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--accent-red);
+            color: var(--accent-red);
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .danger-btn:hover:not(:disabled) {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .danger-btn.warning {
+            background: rgba(245, 158, 11, 0.2);
+            border-color: var(--accent-yellow);
+            color: var(--accent-yellow);
+        }
+
+        .danger-btn.warning:hover:not(:disabled) {
+            background: var(--accent-yellow);
+            color: #0f172a;
+        }
+
+        .danger-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .modal-close {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            margin-top: 8px;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        /* Cost settings styles */
+        .cost-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+        }
+
+        .cost-table th {
+            text-align: left;
+            font-size: 10px;
+            color: var(--text-muted);
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .cost-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 12px;
+        }
+
+        .cost-table input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            width: 70px;
+            font-size: 12px;
+        }
+
+        .cost-table input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .cost-delete-btn {
+            background: none;
+            border: none;
+            color: var(--accent-red);
+            cursor: pointer;
+            padding: 4px;
+            font-size: 14px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+
+        .cost-delete-btn:hover {
+            opacity: 1;
+        }
+
+        .add-cost-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .add-cost-row input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .add-cost-row input:first-child {
+            flex: 1;
+        }
+
+        .add-cost-row input:not(:first-child) {
+            width: 70px;
+        }
+
+        .add-cost-btn {
+            background: var(--accent-blue);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .add-cost-btn:hover {
+            background: var(--accent-purple);
+        }
+
+        .save-costs-btn {
+            background: var(--accent-green);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            margin-top: 12px;
+            transition: background 0.2s;
+        }
+
+        .save-costs-btn:hover {
+            background: #059669;
+        }
+
+        .cost-help {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        /* Conversation Modal Styles */
+        .summary-stat {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .summary-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .summary-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .request-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .request-card.clickable {
+            cursor: pointer;
+        }
+
+        .request-card.clickable:hover {
+            background: rgba(139, 92, 246, 0.08);
+            border-color: var(--accent-purple);
+            transform: translateX(4px);
+        }
+
+        .request-card.user-message {
+            border-left: 3px solid var(--accent-blue);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .request-card.assistant-message {
+            border-left: 3px solid var(--accent-green);
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .request-card.tool-call {
+            border-left: 3px solid var(--accent-purple);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .request-card.api-request {
+            border-left: 3px solid var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.05);
+        }
+
+        .request-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .request-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .request-card-time {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .request-card-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .request-card-stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .request-card-stat-label {
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+        .request-card-stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .request-details-panel {
+            display: none;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        .request-details-panel.visible {
+            display: block;
+        }
+
+        .request-json {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 8px;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .request-json pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: var(--text-secondary);
+        }
+
+        .json-section-title {
+            font-size: 11px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .conversation-row {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .conversation-row:hover {
+            background: rgba(139, 92, 246, 0.08) !important;
+            transform: scale(1.01);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-layout">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>OWUI Toolset V2</h1>
+                <p>Analytics Dashboard</p>
+            </div>
+
+            <div class="sidebar-stats">
+                <div class="stat-item">
+                    <h3>Total Requests</h3>
+                    <div class="value" id="stat-requests">-</div>
+                </div>
+
+                <div class="stat-item">
+                    <h3>Input Tokens</h3>
+                    <div class="value" id="stat-input-tokens">-</div>
+                </div>
+
+                <div class="stat-item">
+                    <h3>Output Tokens</h3>
+                    <div class="value" id="stat-output-tokens">-</div>
+                </div>
+
+                <div class="stat-item">
+                    <h3>Total Cost</h3>
+                    <div class="value" id="stat-cost">-</div>
+                </div>
+
+                <div class="stat-item">
+                    <h3>Cache Tokens</h3>
+                    <div class="value" id="stat-cache-read">-</div>
+                    <div class="stat-sublabel">read from cache</div>
+                    <div class="stat-subvalue" id="stat-cache-write">-</div>
+                    <div class="stat-sublabel">written to cache</div>
+                </div>
+
+                <div class="stat-item">
+                    <h3>Tool Calls</h3>
+                    <div class="value" id="stat-tool-count">-</div>
+                    <div id="tool-breakdown"></div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="settings-btn" onclick="openSettings()">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    Settings
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header>
+                <div class="header-left">
+                    <div class="time-range-selector">
+                        <button class="time-range-btn active" data-range="1h">1h</button>
+                        <button class="time-range-btn" data-range="24h">24h</button>
+                        <button class="time-range-btn" data-range="7d">7d</button>
+                        <button class="time-range-btn" data-range="30d">30d</button>
+                        <button class="time-range-btn" data-range="1y">1y</button>
+                    </div>
+                    <select id="domainFilter" class="domain-filter">
+                        <option value="">All Domains</option>
+                    </select>
+                </div>
+                <div class="header-right">
+                    <div class="live-indicator connected" id="liveIndicator">
+                        <span class="live-dot"></span>
+                        <span id="liveText">Live</span>
+                        <span class="sync-timer" id="syncTimer">15s</span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h2 id="chartTitle">Token Usage by Model</h2>
+                    <div class="chart-toggle">
+                        <button class="chart-toggle-btn active" data-mode="tokens">Tokens</button>
+                        <button class="chart-toggle-btn" data-mode="cost">Cost</button>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="tokenChart"></canvas>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <h2>Recent Conversations</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Last Activity</th>
+                            <th>User</th>
+                            <th>Requests</th>
+                            <th>Input</th>
+                            <th>Output</th>
+                            <th>Cache</th>
+                            <th>Cost</th>
+                            <th>Tools</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="conversations-table">
+                        <tr><td colspan="9" class="no-data">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Conversation Details Modal -->
+    <div class="modal-overlay" id="conversationModal">
+        <div class="modal" style="max-width: 1000px; max-height: 90vh;">
+            <h2>Conversation Details</h2>
+
+            <!-- Conversation Summary -->
+            <div class="modal-section" id="conversationSummary">
+                <h3>Summary</h3>
+                <div id="conversationSummaryContent" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                    <div class="summary-stat">
+                        <div class="summary-label">Total Requests</div>
+                        <div class="summary-value" id="conv-total-requests">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Input Tokens</div>
+                        <div class="summary-value" id="conv-input-tokens">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Output Tokens</div>
+                        <div class="summary-value" id="conv-output-tokens">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Cache Read</div>
+                        <div class="summary-value" id="conv-cache-read">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Cache Write</div>
+                        <div class="summary-value" id="conv-cache-write">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Total Cost</div>
+                        <div class="summary-value" id="conv-cost">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Tool Calls</div>
+                        <div class="summary-value" id="conv-tool-calls">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">First Activity</div>
+                        <div class="summary-value" id="conv-first-activity">-</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Last Activity</div>
+                        <div class="summary-value" id="conv-last-activity">-</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                    <strong>Conversation ID:</strong> <code id="conv-id" style="font-size: 10px; word-break: break-all;">-</code>
+                </div>
+            </div>
+
+            <!-- Request Timeline -->
+            <div class="modal-section">
+                <h3>Request Timeline</h3>
+                <div id="requestTimeline" style="max-height: 400px; overflow-y: auto;">
+                    <div class="no-data">Loading...</div>
+                </div>
+            </div>
+
+            <button class="modal-close" onclick="closeConversationModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal" style="max-width: 600px;">
+            <h2>Settings</h2>
+
+            <div class="modal-section">
+                <h3>Model Costs (per 1M tokens in USD)</h3>
+                <p>Configure pricing for cost tracking. Use exact model IDs or patterns that match model names.</p>
+                <table class="cost-table" id="costTable">
+                    <thead>
+                        <tr>
+                            <th>Pattern</th>
+                            <th>Input $</th>
+                            <th>Output $</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="costTableBody">
+                        <tr><td colspan="4" class="no-data">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <div class="add-cost-row">
+                    <input type="text" id="newCostPattern" placeholder="Pattern (e.g., gpt-5)">
+                    <input type="number" id="newCostInput" placeholder="Input" step="0.01" min="0">
+                    <input type="number" id="newCostOutput" placeholder="Output" step="0.01" min="0">
+                    <button class="add-cost-btn" onclick="addCost()">Add</button>
+                </div>
+                <p class="cost-help">
+                    Use exact model IDs (e.g., "gpt-5.2", "claude-opus-4-5") or patterns. Use "ollama" for local models.
+                    Longer patterns take priority over shorter ones.
+                </p>
+            </div>
+
+            <div class="modal-section">
+                <h3>Danger Zone</h3>
+                <p style="margin-bottom: 16px;">Manage stored data. These actions cannot be undone.</p>
+
+                <!-- Clear Metrics -->
+                <div style="margin-bottom: 16px;">
+                    <p style="font-size: 12px; margin-bottom: 8px;"><strong>Clear Metrics</strong> - Delete all request metrics, messages, and tool call history from the database. User files remain.</p>
+                    <input type="text" class="confirm-text" id="clearMetricsInput" placeholder="Type DELETE to confirm" style="margin-bottom: 8px;">
+                    <button class="danger-btn warning" id="clearMetricsBtn" onclick="clearMetrics()" disabled>Clear Metrics</button>
+                </div>
+
+                <!-- Clear Files -->
+                <div style="margin-bottom: 16px;">
+                    <p style="font-size: 12px; margin-bottom: 8px;"><strong>Clear Files</strong> - Delete all user uploaded files and generated content. Metrics remain.</p>
+                    <input type="text" class="confirm-text" id="clearFilesInput" placeholder="Type DELETE to confirm" style="margin-bottom: 8px;">
+                    <button class="danger-btn warning" id="clearFilesBtn" onclick="clearFiles()" disabled>Clear Files</button>
+                </div>
+
+                <!-- Delete All -->
+                <div>
+                    <p style="font-size: 12px; margin-bottom: 8px;"><strong>Delete All</strong> - Delete everything: metrics database AND all user files.</p>
+                    <input type="text" class="confirm-text" id="deleteAllInput" placeholder="Type DELETE to confirm" style="margin-bottom: 8px;">
+                    <button class="danger-btn" id="deleteAllBtn" onclick="deleteAll()" disabled>Delete All</button>
+                </div>
+            </div>
+            <button class="modal-close" onclick="closeSettings()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentTimeRange = '1h';
+        let currentDomain = '';
+        let chartMode = 'tokens'; // 'tokens' or 'cost'
+        let tokenChart = null;
+        let eventSource = null;
+        let isLoading = false;
+        let isInitialLoad = true;
+        let knownModels = [];
+        let cachedTimeSeriesData = null; // Cache data for mode switching
+        let syncCountdown = 15;
+        let syncTimerInterval = null;
+        let expandedRequestIds = new Set(); // Track expanded request details in modal
+        let currentConversationId = null; // Track currently viewed conversation
+        let timelineItems = []; // Store timeline items for details expansion
+
+        // Colors for each model - output (darker) and input (lighter)
+        const MODEL_COLORS = {
+            'claude-opus-4-5': {
+                output: { bg: 'rgba(139, 92, 246, 0.9)', border: 'rgba(139, 92, 246, 1)' },
+                input: { bg: 'rgba(139, 92, 246, 0.4)', border: 'rgba(139, 92, 246, 0.6)' }
+            },
+            'claude-sonnet-4-5': {
+                output: { bg: 'rgba(168, 85, 247, 0.9)', border: 'rgba(168, 85, 247, 1)' },
+                input: { bg: 'rgba(168, 85, 247, 0.4)', border: 'rgba(168, 85, 247, 0.6)' }
+            },
+            'claude-haiku-4-5': {
+                output: { bg: 'rgba(196, 120, 253, 0.9)', border: 'rgba(196, 120, 253, 1)' },
+                input: { bg: 'rgba(196, 120, 253, 0.4)', border: 'rgba(196, 120, 253, 0.6)' }
+            },
+            'gpt-5.2': {
+                output: { bg: 'rgba(16, 185, 129, 0.9)', border: 'rgba(16, 185, 129, 1)' },
+                input: { bg: 'rgba(16, 185, 129, 0.4)', border: 'rgba(16, 185, 129, 0.6)' }
+            },
+            'gpt-5.1': {
+                output: { bg: 'rgba(52, 211, 153, 0.9)', border: 'rgba(52, 211, 153, 1)' },
+                input: { bg: 'rgba(52, 211, 153, 0.4)', border: 'rgba(52, 211, 153, 0.6)' }
+            },
+            'gpt-5': {
+                output: { bg: 'rgba(34, 197, 94, 0.9)', border: 'rgba(34, 197, 94, 1)' },
+                input: { bg: 'rgba(34, 197, 94, 0.4)', border: 'rgba(34, 197, 94, 0.6)' }
+            }
+        };
+
+        // Function to get color for any model (fallback for ollama and others)
+        function getModelColors(model) {
+            if (MODEL_COLORS[model]) return MODEL_COLORS[model];
+            // Fallback colors for unknown models (like ollama)
+            return {
+                output: { bg: 'rgba(100, 116, 139, 0.9)', border: 'rgba(100, 116, 139, 1)' },
+                input: { bg: 'rgba(100, 116, 139, 0.4)', border: 'rgba(100, 116, 139, 0.6)' }
+            };
+        }
+        const MODEL_LABELS = {
+            'claude-opus-4-5': 'Opus 4.5',
+            'claude-sonnet-4-5': 'Sonnet 4.5',
+            'claude-haiku-4-5': 'Haiku 4.5',
+            'gpt-5': 'GPT-5',
+            'gpt-5.1': 'GPT-5.1',
+            'gpt-5.2': 'GPT-5.2',
+            'ollama': 'Ollama (Local)'
+        };
+
+        // Time bucket configuration
+        const TIME_BUCKETS = {
+            '1h': { count: 12, interval: 5 * 60 * 1000, format: 'HH:mm' },      // 5 min intervals
+            '24h': { count: 24, interval: 60 * 60 * 1000, format: 'HH:00' },    // 1 hour intervals
+            '7d': { count: 7, interval: 24 * 60 * 60 * 1000, format: 'ddd' },   // 1 day intervals
+            '30d': { count: 30, interval: 24 * 60 * 60 * 1000, format: 'MMM D' }, // 1 day intervals
+            '1y': { count: 12, interval: 30 * 24 * 60 * 60 * 1000, format: 'MMM' } // ~1 month intervals
+        };
+
+        // Generate fixed time buckets (using UTC to match database)
+        function generateTimeBuckets(timeRange) {
+            const config = TIME_BUCKETS[timeRange];
+            const buckets = [];
+            const now = new Date();
+
+            for (let i = config.count - 1; i >= 0; i--) {
+                const time = new Date(now.getTime() - (i * config.interval));
+
+                // Round to appropriate interval (in UTC)
+                if (timeRange === '1h') {
+                    time.setUTCSeconds(0, 0);
+                    time.setUTCMinutes(Math.floor(time.getUTCMinutes() / 5) * 5);
+                } else if (timeRange === '24h') {
+                    time.setUTCMinutes(0, 0, 0);
+                } else {
+                    time.setUTCHours(0, 0, 0, 0);
+                }
+
+                buckets.push(time);
+            }
+            return buckets;
+        }
+
+        // Format time bucket for display (local time for readability)
+        function formatBucket(date, timeRange) {
+            if (timeRange === '1h' || timeRange === '24h') {
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            } else if (timeRange === '7d') {
+                return date.toLocaleDateString('en-US', { weekday: 'short' });
+            } else if (timeRange === '1y') {
+                return date.toLocaleDateString('en-US', { month: 'short' });
+            }
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        // Format time bucket for matching with API data (UTC to match database)
+        function formatBucketKey(date, timeRange) {
+            const pad = n => n.toString().padStart(2, '0');
+            const y = date.getUTCFullYear();
+            const m = pad(date.getUTCMonth() + 1);
+            const d = pad(date.getUTCDate());
+            const h = pad(date.getUTCHours());
+            const min = pad(date.getUTCMinutes());
+
+            if (timeRange === '1h') {
+                return `${y}-${m}-${d} ${h}:${min}`;
+            } else if (timeRange === '24h') {
+                return `${y}-${m}-${d} ${h}:00`;
+            } else if (timeRange === '1y') {
+                return `${y}-${m}`;
+            }
+            return `${y}-${m}-${d}`;
+        }
+
+        // Auth token
+        function getAuthToken() {
+            const saved = sessionStorage.getItem('dashboardAuth');
+            if (saved) return saved;
+            const token = btoa('admin:admin');
+            sessionStorage.setItem('dashboardAuth', token);
+            return token;
+        }
+
+        // Sync timer functions
+        function startSyncTimer() {
+            syncCountdown = 15;
+            updateSyncTimerDisplay();
+
+            if (syncTimerInterval) clearInterval(syncTimerInterval);
+
+            syncTimerInterval = setInterval(() => {
+                syncCountdown--;
+                updateSyncTimerDisplay();
+
+                if (syncCountdown <= 0) {
+                    syncCountdown = 15;
+                    if (!isLoading) {
+                        isInitialLoad = false;
+                        loadData();
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateSyncTimerDisplay() {
+            const timerEl = document.getElementById('syncTimer');
+            if (timerEl) {
+                timerEl.textContent = `${syncCountdown}s`;
+            }
+        }
+
+        function resetSyncTimer() {
+            syncCountdown = 15;
+            updateSyncTimerDisplay();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupTimeRangeButtons();
+            setupDomainFilter();
+            setupChartToggle();
+            setupConfirmInput();
+            connectEventSource();
+            loadDomains();
+            loadData();
+            startSyncTimer();
+        });
+
+        function setupTimeRangeButtons() {
+            document.querySelectorAll('.time-range-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentTimeRange = btn.dataset.range;
+                    isInitialLoad = true; // Animate when time range changes
+                    loadData();
+                });
+            });
+        }
+
+        function setupDomainFilter() {
+            document.getElementById('domainFilter').addEventListener('change', (e) => {
+                currentDomain = e.target.value;
+                isInitialLoad = true; // Animate when filter changes
+                loadData();
+            });
+        }
+
+        function setupChartToggle() {
+            document.querySelectorAll('.chart-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const newMode = btn.dataset.mode;
+                    if (newMode === chartMode) return;
+
+                    // Update active state
+                    document.querySelectorAll('.chart-toggle-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+
+                    // Update mode and title
+                    chartMode = newMode;
+                    document.getElementById('chartTitle').textContent =
+                        chartMode === 'tokens' ? 'Token Usage by Model' : 'Cost by Model';
+
+                    // Re-render chart with cached data
+                    if (cachedTimeSeriesData) {
+                        renderChart(cachedTimeSeriesData);
+                    }
+                });
+            });
+        }
+
+        function setupConfirmInput() {
+            // Clear Metrics confirmation
+            document.getElementById('clearMetricsInput').addEventListener('input', (e) => {
+                document.getElementById('clearMetricsBtn').disabled = e.target.value !== 'DELETE';
+            });
+
+            // Clear Files confirmation
+            document.getElementById('clearFilesInput').addEventListener('input', (e) => {
+                document.getElementById('clearFilesBtn').disabled = e.target.value !== 'DELETE';
+            });
+
+            // Delete All confirmation
+            document.getElementById('deleteAllInput').addEventListener('input', (e) => {
+                document.getElementById('deleteAllBtn').disabled = e.target.value !== 'DELETE';
+            });
+        }
+
+        // Load available domains
+        async function loadDomains() {
+            try {
+                const res = await fetch('/api/stats/domains');
+                const domains = await res.json();
+                const select = document.getElementById('domainFilter');
+
+                // Keep current selection
+                const current = select.value;
+
+                // Clear and rebuild options
+                select.innerHTML = '<option value="">All Domains</option>';
+                domains.forEach(d => {
+                    const option = document.createElement('option');
+                    option.value = d.domain;
+                    option.textContent = `${d.domain} (${d.count})`;
+                    select.appendChild(option);
+                });
+
+                // Restore selection
+                select.value = current;
+            } catch (e) {
+                console.error('Error loading domains:', e);
+            }
+        }
+
+        // SSE connection
+        function connectEventSource() {
+            const authToken = getAuthToken();
+            eventSource = new EventSource(`/api/events?token=${authToken}`);
+
+            eventSource.onopen = () => {
+                document.getElementById('liveIndicator').className = 'live-indicator connected';
+                document.getElementById('liveText').textContent = 'Live';
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'new_request' && !isLoading) {
+                        loadData();
+                    }
+                } catch (e) {}
+            };
+
+            eventSource.onerror = () => {
+                document.getElementById('liveIndicator').className = 'live-indicator disconnected';
+                document.getElementById('liveText').textContent = 'Disconnected';
+                eventSource.close();
+                setTimeout(connectEventSource, 5000);
+            };
+        }
+
+        // Load all data
+        async function loadData() {
+            if (isLoading) return;
+            isLoading = true;
+            try {
+                await Promise.all([
+                    loadStatistics(),
+                    loadToolCount(),
+                    loadTokenTimeSeries(),
+                    loadRecentConversations(),
+                    loadDomains()
+                ]);
+                resetSyncTimer(); // Reset countdown after successful load
+            } catch (e) {
+                console.error('Error loading data:', e);
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // Load statistics
+        async function loadStatistics() {
+            const res = await fetch(`/api/stats/${currentTimeRange}`);
+            const stats = await res.json();
+
+            document.getElementById('stat-requests').textContent = formatNumber(stats.total_requests || 0);
+            document.getElementById('stat-input-tokens').textContent = formatNumber(stats.total_input_tokens || 0);
+            document.getElementById('stat-output-tokens').textContent = formatNumber(stats.total_output_tokens || 0);
+            document.getElementById('stat-cost').textContent = '$' + (stats.total_cost || 0).toFixed(4);
+
+            // Cache token stats
+            document.getElementById('stat-cache-read').textContent = formatNumber(stats.total_cache_read_tokens || 0);
+            document.getElementById('stat-cache-write').textContent = formatNumber(stats.total_cache_creation_tokens || 0);
+        }
+
+        // Load tool count
+        async function loadToolCount() {
+            const [countRes, statsRes] = await Promise.all([
+                fetch('/api/stats/tool-count'),
+                fetch('/api/stats/tools')
+            ]);
+            const { count } = await countRes.json();
+            const toolStats = await statsRes.json();
+
+            document.getElementById('stat-tool-count').textContent = formatNumber(count);
+
+            const breakdown = document.getElementById('tool-breakdown');
+            if (toolStats.length === 0) {
+                breakdown.innerHTML = '';
+            } else {
+                breakdown.innerHTML = toolStats.slice(0, 3).map(t => `
+                    <div class="tool-stat">
+                        <span class="tool-name">${t.tool}</span>
+                        <span class="tool-count">${t.count}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Load token time series (by model with input/output split)
+        async function loadTokenTimeSeries() {
+            const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
+            const res = await fetch(`/api/stats/timeseries/${currentTimeRange}${domainParam}`);
+            const apiData = await res.json();
+
+            // Get unique models from data
+            const modelsInData = [...new Set(apiData.map(d => d.model))];
+            if (modelsInData.length > 0) {
+                knownModels = modelsInData;
+            }
+
+            // Generate fixed time buckets
+            const timeBuckets = generateTimeBuckets(currentTimeRange);
+            const bucketKeys = timeBuckets.map(d => formatBucketKey(d, currentTimeRange));
+            const displayLabels = timeBuckets.map(d => formatBucket(d, currentTimeRange));
+
+            // Group API data by time_bucket and model (include cost)
+            const dataMap = {};
+            apiData.forEach(d => {
+                if (!dataMap[d.time_bucket]) {
+                    dataMap[d.time_bucket] = {};
+                }
+                dataMap[d.time_bucket][d.model] = {
+                    input: d.input_tokens || 0,
+                    output: d.output_tokens || 0,
+                    cost: d.cost || 0
+                };
+            });
+
+            // Cache for mode switching
+            cachedTimeSeriesData = { dataMap, bucketKeys, displayLabels };
+
+            // Render the chart
+            renderChart(cachedTimeSeriesData);
+        }
+
+        function renderChart(data) {
+            const { dataMap, bucketKeys, displayLabels } = data;
+            const isCostMode = chartMode === 'cost';
+
+            // Create datasets based on mode
+            const datasets = [];
+            knownModels.forEach(model => {
+                const colors = getModelColors(model);
+                const label = MODEL_LABELS[model] || model;
+
+                if (isCostMode) {
+                    // Single dataset per model for cost
+                    datasets.push({
+                        label: label,
+                        data: bucketKeys.map(key => {
+                            const val = dataMap[key]?.[model]?.cost || 0;
+                            return Math.round(val * 10000) / 10000; // Round to 4 decimals
+                        }),
+                        backgroundColor: colors.output.bg,
+                        borderColor: colors.output.border,
+                        borderWidth: 1,
+                        stack: 'cost'
+                    });
+                } else {
+                    // Output dataset (darker)
+                    datasets.push({
+                        label: `${label} Output`,
+                        data: bucketKeys.map(key => dataMap[key]?.[model]?.output || 0),
+                        backgroundColor: colors.output.bg,
+                        borderColor: colors.output.border,
+                        borderWidth: 1,
+                        stack: model
+                    });
+
+                    // Input dataset (lighter)
+                    datasets.push({
+                        label: `${label} Input`,
+                        data: bucketKeys.map(key => dataMap[key]?.[model]?.input || 0),
+                        backgroundColor: colors.input.bg,
+                        borderColor: colors.input.border,
+                        borderWidth: 1,
+                        stack: model
+                    });
+                }
+            });
+
+            const ctx = document.getElementById('tokenChart');
+
+            // Update existing chart if possible (to preserve animation state)
+            if (tokenChart && !isInitialLoad) {
+                tokenChart.data.labels = displayLabels;
+                tokenChart.data.datasets = datasets;
+                tokenChart.options.scales.y.ticks.callback = isCostMode
+                    ? (value) => '$' + value.toFixed(2)
+                    : (value) => formatNumber(value);
+                tokenChart.options.plugins.tooltip.callbacks.label = function(context) {
+                    const value = context.raw || 0;
+                    if (value === 0) return null;
+                    return isCostMode
+                        ? `${context.dataset.label}: $${value.toFixed(4)}`
+                        : `${context.dataset.label}: ${formatNumber(value)}`;
+                };
+                tokenChart.options.plugins.tooltip.callbacks.afterBody = function(tooltipItems) {
+                    const chart = tooltipItems[0].chart;
+                    const dataIndex = tooltipItems[0].dataIndex;
+                    let total = 0;
+
+                    if (isCostMode) {
+                        chart.data.datasets.forEach(dataset => {
+                            total += dataset.data[dataIndex] || 0;
+                        });
+                        if (total === 0) return '';
+                        return ['', '─────────────', `Total: $${total.toFixed(4)}`];
+                    } else {
+                        let totalInput = 0, totalOutput = 0;
+                        chart.data.datasets.forEach(dataset => {
+                            const value = dataset.data[dataIndex] || 0;
+                            if (dataset.label.includes('Input')) totalInput += value;
+                            else if (dataset.label.includes('Output')) totalOutput += value;
+                        });
+                        total = totalInput + totalOutput;
+                        if (total === 0) return '';
+                        return ['', '─────────────', `Total Input: ${formatNumber(totalInput)}`, `Total Output: ${formatNumber(totalOutput)}`, `Total: ${formatNumber(total)}`];
+                    }
+                };
+                tokenChart.update('none');
+            } else {
+                if (tokenChart) tokenChart.destroy();
+
+                tokenChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: displayLabels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: isInitialLoad ? { duration: 750 } : false,
+                        scales: {
+                            x: {
+                                stacked: true,
+                                grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                                ticks: { color: '#cbd5e1', maxRotation: 45 }
+                            },
+                            y: {
+                                stacked: true,
+                                grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                                ticks: {
+                                    color: '#cbd5e1',
+                                    callback: isCostMode
+                                        ? (value) => '$' + value.toFixed(2)
+                                        : (value) => formatNumber(value)
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                labels: { color: '#cbd5e1' },
+                                onClick: (e, legendItem, legend) => {
+                                    const index = legendItem.datasetIndex;
+                                    const ci = legend.chart;
+                                    if (ci.isDatasetVisible(index)) {
+                                        ci.hide(index);
+                                        legendItem.hidden = true;
+                                    } else {
+                                        ci.show(index);
+                                        legendItem.hidden = false;
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                borderColor: 'rgba(139, 92, 246, 0.3)',
+                                borderWidth: 1,
+                                titleColor: '#f1f5f9',
+                                bodyColor: '#cbd5e1',
+                                padding: 12,
+                                cornerRadius: 8,
+                                callbacks: {
+                                    title: function(tooltipItems) {
+                                        return tooltipItems[0].label;
+                                    },
+                                    label: function(context) {
+                                        const value = context.raw || 0;
+                                        if (value === 0) return null;
+                                        return isCostMode
+                                            ? `${context.dataset.label}: $${value.toFixed(4)}`
+                                            : `${context.dataset.label}: ${formatNumber(value)}`;
+                                    },
+                                    afterBody: function(tooltipItems) {
+                                        const chart = tooltipItems[0].chart;
+                                        const dataIndex = tooltipItems[0].dataIndex;
+                                        let total = 0;
+
+                                        if (isCostMode) {
+                                            chart.data.datasets.forEach(dataset => {
+                                                total += dataset.data[dataIndex] || 0;
+                                            });
+                                            if (total === 0) return '';
+                                            return ['', '─────────────', `Total: $${total.toFixed(4)}`];
+                                        } else {
+                                            let totalInput = 0, totalOutput = 0;
+                                            chart.data.datasets.forEach(dataset => {
+                                                const value = dataset.data[dataIndex] || 0;
+                                                if (dataset.label.includes('Input')) totalInput += value;
+                                                else if (dataset.label.includes('Output')) totalOutput += value;
+                                            });
+                                            total = totalInput + totalOutput;
+                                            if (total === 0) return '';
+                                            return ['', '─────────────', `Total Input: ${formatNumber(totalInput)}`, `Total Output: ${formatNumber(totalOutput)}`, `Total: ${formatNumber(total)}`];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Load recent conversations
+        async function loadRecentConversations() {
+            let url = '/api/conversations/recent?limit=50';
+            // Add time range filter
+            if (currentTimeRange) {
+                url += `&timeRange=${encodeURIComponent(currentTimeRange)}`;
+            }
+            // Add domain filter
+            if (currentDomain) {
+                url += `&domain=${encodeURIComponent(currentDomain)}`;
+            }
+            const res = await fetch(url);
+            const conversations = await res.json();
+            const tbody = document.getElementById('conversations-table');
+
+            if (conversations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No conversations yet</td></tr>';
+                return;
+            }
+
+            // Build the table
+            tbody.innerHTML = conversations.map(conv => {
+                const lastActivity = new Date(conv.last_activity).toLocaleString();
+                const inputTokens = conv.total_input_tokens || 0;
+                const outputTokens = conv.total_output_tokens || 0;
+                const cacheRead = conv.total_cache_read_tokens || 0;
+                const cacheWrite = conv.total_cache_creation_tokens || 0;
+                const cacheDisplay = (cacheRead > 0 || cacheWrite > 0)
+                    ? `<span class="cache-tokens">${formatNumber(cacheRead)}r/${formatNumber(cacheWrite)}w</span>`
+                    : '-';
+                const statusBadge = conv.failed_requests > 0
+                    ? `<span class="badge badge-error">${conv.failed_requests} err</span>`
+                    : `<span class="badge badge-success">OK</span>`;
+
+                return `
+                    <tr class="conversation-row" onclick="openConversation('${escapeHtml(conv.conversation_id)}')">
+                        <td>${lastActivity}</td>
+                        <td>${escapeHtml(conv.user_email)}</td>
+                        <td>${conv.total_requests}</td>
+                        <td>${formatNumber(inputTokens)}</td>
+                        <td>${formatNumber(outputTokens)}</td>
+                        <td>${cacheDisplay}</td>
+                        <td>$${(conv.total_cost || 0).toFixed(4)}</td>
+                        <td>${conv.total_tool_calls || 0}</td>
+                        <td>${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Open conversation modal
+        async function openConversation(conversationId) {
+            currentConversationId = conversationId;
+            expandedRequestIds.clear();
+
+            // Show modal
+            document.getElementById('conversationModal').classList.add('active');
+
+            // Load conversation details
+            const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
+            const requests = await res.json();
+
+            if (requests.length === 0) {
+                document.getElementById('requestTimeline').innerHTML = '<div class="no-data">No requests found</div>';
+                return;
+            }
+
+            // Calculate summary stats
+            const totalInputTokens = requests.reduce((sum, r) => sum + (r.input_tokens || 0), 0);
+            const totalOutputTokens = requests.reduce((sum, r) => sum + (r.output_tokens || 0), 0);
+            const totalCacheRead = requests.reduce((sum, r) => sum + (r.cache_read_tokens || 0), 0);
+            const totalCacheWrite = requests.reduce((sum, r) => sum + (r.cache_creation_tokens || 0), 0);
+            const totalCost = requests.reduce((sum, r) => sum + (r.cost || 0), 0);
+            const totalToolCalls = requests.reduce((sum, r) => sum + (r.tool_count || 0), 0);
+            const firstActivity = new Date(requests[0].timestamp).toLocaleString();
+            const lastActivity = new Date(requests[requests.length - 1].timestamp).toLocaleString();
+
+            // Update summary
+            document.getElementById('conv-total-requests').textContent = requests.length;
+            document.getElementById('conv-input-tokens').textContent = formatNumber(totalInputTokens);
+            document.getElementById('conv-output-tokens').textContent = formatNumber(totalOutputTokens);
+            document.getElementById('conv-cache-read').textContent = formatNumber(totalCacheRead);
+            document.getElementById('conv-cache-write').textContent = formatNumber(totalCacheWrite);
+            document.getElementById('conv-cost').textContent = '$' + totalCost.toFixed(4);
+            document.getElementById('conv-tool-calls').textContent = totalToolCalls;
+            document.getElementById('conv-first-activity').textContent = firstActivity;
+            document.getElementById('conv-last-activity').textContent = lastActivity;
+            document.getElementById('conv-id').textContent = conversationId;
+
+            // Fetch all messages and tool calls for all requests
+            const allFetches = [];
+            requests.forEach(req => {
+                allFetches.push(
+                    fetch(`/api/requests/${req.id}/messages`).then(r => r.json()).then(messages => ({ requestId: req.id, messages, request: req })),
+                    fetch(`/api/requests/${req.id}/tools`).then(r => r.json()).then(tools => ({ requestId: req.id, tools }))
+                );
+            });
+
+            const results = await Promise.all(allFetches);
+
+            // Organize data by request ID
+            const requestData = {};
+            results.forEach(result => {
+                if (!requestData[result.requestId]) {
+                    requestData[result.requestId] = { messages: [], tools: [], request: null };
+                }
+                if (result.messages) {
+                    requestData[result.requestId].messages = result.messages;
+                    requestData[result.requestId].request = result.request;
+                }
+                if (result.tools) {
+                    requestData[result.requestId].tools = result.tools;
+                }
+            });
+
+            // Build unified timeline: each message and tool call as separate item
+            const timeline = [];
+            Object.keys(requestData).forEach(requestId => {
+                const data = requestData[requestId];
+                const req = data.request;
+
+                // Add messages
+                data.messages.forEach(msg => {
+                    timeline.push({
+                        type: msg.role === 'user' ? 'user' : 'assistant',
+                        timestamp: new Date(msg.timestamp).getTime(),
+                        displayTime: new Date(msg.timestamp).toLocaleString(),
+                        data: msg,
+                        requestId: requestId,
+                        request: req
+                    });
+                });
+
+                // Add tool calls
+                data.tools.forEach(tool => {
+                    timeline.push({
+                        type: 'tool',
+                        timestamp: new Date(tool.timestamp).getTime(),
+                        displayTime: new Date(tool.timestamp).toLocaleString(),
+                        data: tool,
+                        requestId: requestId,
+                        request: req
+                    });
+                });
+            });
+
+            // Sort by timestamp
+            timeline.sort((a, b) => a.timestamp - b.timestamp);
+
+            // Store timeline items for details expansion
+            timelineItems = timeline;
+
+            // Render timeline
+            const timelineEl = document.getElementById('requestTimeline');
+            timelineEl.innerHTML = timeline.map((item, index) => {
+                const uniqueId = `timeline-${item.type}-${item.requestId}-${index}`;
+
+                if (item.type === 'user') {
+                    const content = truncate(item.data.content, 100);
+                    return `
+                        <div class="request-card user-message" onclick="toggleTimelineDetails('${uniqueId}', event)">
+                            <div class="request-card-header">
+                                <span class="request-card-title">User Message</span>
+                                <span class="request-card-time">${item.displayTime}</span>
+                            </div>
+                            <div class="request-card-stats">
+                                <div class="request-card-stat" style="grid-column: 1 / -1;">
+                                    <span class="request-card-stat-value" style="font-size: 0.9em; color: var(--text-secondary);">${escapeHtml(content)}</span>
+                                </div>
+                            </div>
+                            <div class="request-details-panel" id="${uniqueId}">
+                                <div class="no-data">Loading details...</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (item.type === 'assistant') {
+                    const content = truncate(item.data.content, 100);
+                    const modelLabel = MODEL_LABELS[item.request.model] || item.request.model;
+                    const modelClass = item.request.model.includes('claude') ? 'anthropic' : 'openai';
+                    return `
+                        <div class="request-card assistant-message" onclick="toggleTimelineDetails('${uniqueId}', event)">
+                            <div class="request-card-header">
+                                <span class="request-card-title">Assistant Response</span>
+                                <span class="request-card-time">${item.displayTime}</span>
+                            </div>
+                            <div class="request-card-stats">
+                                <div class="request-card-stat">
+                                    <span class="request-card-stat-label">Model</span>
+                                    <span class="request-card-stat-value"><span class="model-badge ${modelClass}">${modelLabel}</span></span>
+                                </div>
+                                <div class="request-card-stat" style="grid-column: 2 / -1;">
+                                    <span class="request-card-stat-value" style="font-size: 0.9em; color: var(--text-secondary);">${escapeHtml(content)}</span>
+                                </div>
+                            </div>
+                            <div class="request-details-panel" id="${uniqueId}">
+                                <div class="no-data">Loading details...</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (item.type === 'tool') {
+                    const toolName = item.data.tool_name;
+                    const success = item.data.success === 1;
+                    const statusIcon = success ? '✓' : '✗';
+                    const execTime = item.data.execution_time_ms ? `${item.data.execution_time_ms}ms` : '-';
+                    return `
+                        <div class="request-card tool-call" onclick="toggleTimelineDetails('${uniqueId}', event)">
+                            <div class="request-card-header">
+                                <span class="request-card-title">Tool: ${escapeHtml(toolName)} ${statusIcon}</span>
+                                <span class="request-card-time">${item.displayTime}</span>
+                            </div>
+                            <div class="request-card-stats">
+                                <div class="request-card-stat">
+                                    <span class="request-card-stat-label">Execution</span>
+                                    <span class="request-card-stat-value">${execTime}</span>
+                                </div>
+                                <div class="request-card-stat">
+                                    <span class="request-card-stat-label">Status</span>
+                                    <span class="request-card-stat-value">${success ? 'Success' : 'Failed'}</span>
+                                </div>
+                            </div>
+                            <div class="request-details-panel" id="${uniqueId}">
+                                <div class="no-data">Loading details...</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        // Toggle timeline item details in conversation modal
+        function toggleTimelineDetails(uniqueId, event) {
+            event.stopPropagation();
+
+            const detailsPanel = document.getElementById(uniqueId);
+            const isVisible = detailsPanel.classList.contains('visible');
+
+            if (isVisible) {
+                detailsPanel.classList.remove('visible');
+                return;
+            }
+
+            // Show panel and load details
+            detailsPanel.classList.add('visible');
+
+            // Find the timeline item
+            const item = timelineItems.find(t => {
+                const id = `timeline-${t.type}-${t.requestId}-${timelineItems.indexOf(t)}`;
+                return id === uniqueId;
+            });
+
+            if (!item) {
+                detailsPanel.innerHTML = '<div class="no-data">No details available</div>';
+                return;
+            }
+
+            let html = '';
+
+            if (item.type === 'user' || item.type === 'assistant') {
+                // Show message details
+                html += '<div class="json-section-title">Message Details</div>';
+                html += `
+                    <div class="request-json">
+                        <pre>${JSON.stringify({
+                            role: item.data.role,
+                            content: item.data.content,
+                            timestamp: item.data.timestamp
+                        }, null, 2)}</pre>
+                    </div>
+                `;
+            } else if (item.type === 'tool') {
+                // Show tool call details
+                html += '<div class="json-section-title">Tool Call Details</div>';
+                const toolData = {
+                    tool_name: item.data.tool_name,
+                    tool_params: typeof item.data.tool_params === 'string' ? JSON.parse(item.data.tool_params) : item.data.tool_params,
+                    tool_result: item.data.tool_result ? truncate(item.data.tool_result, 500) : null,
+                    success: item.data.success === 1,
+                    execution_time_ms: item.data.execution_time_ms,
+                    timestamp: item.data.timestamp
+                };
+                html += `
+                    <div class="request-json">
+                        <pre>${JSON.stringify(toolData, null, 2)}</pre>
+                    </div>
+                `;
+            }
+
+            if (html === '') {
+                html = '<div class="no-data">No details available</div>';
+            }
+
+            detailsPanel.innerHTML = html;
+        }
+
+        // Close conversation modal
+        function closeConversationModal() {
+            document.getElementById('conversationModal').classList.remove('active');
+            currentConversationId = null;
+            expandedRequestIds.clear();
+        }
+
+        // Utility functions
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function truncate(text, maxLen) {
+            if (!text) return '';
+            if (text.length <= maxLen) return text;
+            return text.substring(0, maxLen) + '...';
+        }
+
+        // Settings modal
+        function openSettings() {
+            document.getElementById('settingsModal').classList.add('active');
+            // Clear all confirm inputs
+            document.getElementById('clearMetricsInput').value = '';
+            document.getElementById('clearFilesInput').value = '';
+            document.getElementById('deleteAllInput').value = '';
+            // Disable all danger buttons
+            document.getElementById('clearMetricsBtn').disabled = true;
+            document.getElementById('clearFilesBtn').disabled = true;
+            document.getElementById('deleteAllBtn').disabled = true;
+            loadCosts();
+        }
+
+        // Cost management
+        async function loadCosts() {
+            try {
+                const res = await fetch('/api/settings/costs');
+                const costs = await res.json();
+                renderCostTable(costs);
+            } catch (e) {
+                console.error('Error loading costs:', e);
+                document.getElementById('costTableBody').innerHTML =
+                    '<tr><td colspan="4" class="no-data">Error loading costs</td></tr>';
+            }
+        }
+
+        function renderCostTable(costs) {
+            const tbody = document.getElementById('costTableBody');
+            const patterns = Object.keys(costs).sort();
+
+            if (patterns.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="no-data">No costs configured</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = patterns.map(pattern => {
+                // Use MODEL_LABELS for friendly display, fall back to pattern
+                const displayName = MODEL_LABELS[pattern] || pattern;
+                return `
+                <tr data-pattern="${escapeHtml(pattern)}">
+                    <td><strong>${escapeHtml(displayName)}</strong><br><span style="font-size:10px;color:var(--text-muted)">${escapeHtml(pattern)}</span></td>
+                    <td>
+                        <input type="number" value="${costs[pattern].input}" step="0.01" min="0"
+                               onchange="updateCost('${escapeHtml(pattern)}', this.value, null)">
+                    </td>
+                    <td>
+                        <input type="number" value="${costs[pattern].output}" step="0.01" min="0"
+                               onchange="updateCost('${escapeHtml(pattern)}', null, this.value)">
+                    </td>
+                    <td>
+                        <button class="cost-delete-btn" onclick="deleteCost('${escapeHtml(pattern)}')" title="Delete">✕</button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        async function updateCost(pattern, inputVal, outputVal) {
+            try {
+                // Get current values from the row
+                const row = document.querySelector(`tr[data-pattern="${pattern}"]`);
+                const inputs = row.querySelectorAll('input');
+                const input = inputVal !== null ? parseFloat(inputVal) : parseFloat(inputs[0].value);
+                const output = outputVal !== null ? parseFloat(outputVal) : parseFloat(inputs[1].value);
+
+                await fetch('/api/settings/costs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pattern, input, output })
+                });
+            } catch (e) {
+                console.error('Error updating cost:', e);
+                alert('Failed to update cost');
+            }
+        }
+
+        async function addCost() {
+            const pattern = document.getElementById('newCostPattern').value.trim();
+            const input = parseFloat(document.getElementById('newCostInput').value) || 0;
+            const output = parseFloat(document.getElementById('newCostOutput').value) || 0;
+
+            if (!pattern) {
+                alert('Please enter a pattern');
+                return;
+            }
+
+            try {
+                await fetch('/api/settings/costs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pattern, input, output })
+                });
+
+                // Clear inputs and reload
+                document.getElementById('newCostPattern').value = '';
+                document.getElementById('newCostInput').value = '';
+                document.getElementById('newCostOutput').value = '';
+                loadCosts();
+            } catch (e) {
+                console.error('Error adding cost:', e);
+                alert('Failed to add cost');
+            }
+        }
+
+        async function deleteCost(pattern) {
+            if (!confirm(`Delete cost settings for "${pattern}"?`)) return;
+
+            try {
+                await fetch(`/api/settings/costs/${encodeURIComponent(pattern)}`, {
+                    method: 'DELETE'
+                });
+                loadCosts();
+            } catch (e) {
+                console.error('Error deleting cost:', e);
+                alert('Failed to delete cost');
+            }
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+
+        document.getElementById('conversationModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) closeConversationModal();
+        });
+
+        document.getElementById('settingsModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) closeSettings();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.getElementById('conversationModal').classList.contains('active')) {
+                    closeConversationModal();
+                } else if (document.getElementById('settingsModal').classList.contains('active')) {
+                    closeSettings();
+                }
+            }
+        });
+
+        // Clear metrics database only
+        async function clearMetrics() {
+            if (document.getElementById('clearMetricsInput').value !== 'DELETE') return;
+
+            const btn = document.getElementById('clearMetricsBtn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Clearing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/settings/clear-metrics', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    btn.textContent = '✓ Cleared!';
+                    document.getElementById('clearMetricsInput').value = '';
+                    setTimeout(() => {
+                        loadData();
+                        btn.textContent = originalText;
+                    }, 1500);
+                } else {
+                    throw new Error(data.message || 'Failed to clear metrics');
+                }
+            } catch (e) {
+                btn.textContent = '✗ Error!';
+                alert('Error: ' + e.message);
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        // Clear user files only
+        async function clearFiles() {
+            if (document.getElementById('clearFilesInput').value !== 'DELETE') return;
+
+            const btn = document.getElementById('clearFilesBtn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Clearing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/settings/clear-files', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    btn.textContent = '✓ Cleared!';
+                    document.getElementById('clearFilesInput').value = '';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 1500);
+                } else {
+                    throw new Error(data.message || 'Failed to clear files');
+                }
+            } catch (e) {
+                btn.textContent = '✗ Error!';
+                alert('Error: ' + e.message);
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        // Delete everything
+        async function deleteAll() {
+            if (document.getElementById('deleteAllInput').value !== 'DELETE') return;
+
+            const btn = document.getElementById('deleteAllBtn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Deleting...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/settings/delete-all', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    btn.textContent = '✓ Deleted!';
+                    document.getElementById('deleteAllInput').value = '';
+                    setTimeout(() => {
+                        loadData();
+                        btn.textContent = originalText;
+                    }, 1500);
+                } else {
+                    throw new Error(data.message || 'Failed to delete all data');
+                }
+            } catch (e) {
+                btn.textContent = '✗ Error!';
+                alert('Error: ' + e.message);
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) eventSource.close();
+        });
+    </script>
+</body>
+</html>

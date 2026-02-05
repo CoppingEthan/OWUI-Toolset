@@ -1,0 +1,340 @@
+# https://docs.openwebui.com/faq
+
+  * [](/)
+  * ❓ FAQ
+
+
+
+On this page
+
+# ❓ FAQ
+
+Sponsored by Open WebUI Inc.
+
+[![Open WebUI Inc.](/sponsors/banners/openwebui-banner.png)![Open WebUI Inc.](/sponsors/banners/openwebui-banner-mobile.png)](https://docs.openwebui.com/enterprise)
+
+Upgrade to a licensed plan for enhanced capabilities, including custom theming and branding, and dedicated support.
+
+### Q: How do I customize the logo and branding?​
+
+**A:** You can customize the theme, logo, and branding with our **[Enterprise License](https://docs.openwebui.com/enterprise)** , which unlocks exclusive enterprise features.
+
+For more details on enterprise solutions and branding customizations, [click here](https://docs.openwebui.com/enterprise).
+
+### Q: Is my data being sent anywhere?​
+
+**A:** No, your data is never sent anywhere unless you explicitly choose to share it or you connect an external model provider. Everything inside Open WebUI runs and is stored locally on your machine or server, giving you full control over your data at all times. We encourage you not to simply take our word for it: our entire codebase is hosted publicly, so you can inspect exactly how everything works, and if you ever notice anything concerning, please report it to us on our repo immediately.
+
+### Q: Can I use Open WebUI in outer space (e.g., Mars and beyond) or other extreme environments?​
+
+**A:** **Yes.** Open WebUI is fully self-hosted and does not rely on persistent internet connectivity, making it suitable for environments where cloud-based systems are impractical or impossible. As long as the underlying hardware can run a supported runtime, Open WebUI will function normally regardless of location.
+
+This includes outer space and off-planet environments such as spacecraft, space stations, lunar bases, and Mars transit or surface habitats, where communication delays or total isolation make external dependencies unworkable. Open WebUI’s offline-first architecture ensures that models, tools, and data remain local and predictable even under extreme latency or complete disconnection.
+
+The same principles apply in harsh terrestrial settings, including submarines, polar research stations, underground facilities, air-gapped networks, disaster zones, and mobile command environments. In short, if your system can boot, power itself, Open WebUI will run—by design.
+
+### Q: Why am I asked to sign up? Where are my data being sent to?​
+
+**A:** We require you to sign up to become the admin user for enhanced security. This ensures that if the Open WebUI is ever exposed to external access, your data remains secure. It's important to note that everything is kept local. We do not collect your data. When you sign up, all information stays within your server and never leaves your device. Your privacy and security are our top priorities, ensuring that your data remains under your control at all times.
+
+### Q: Why can't my Docker container connect to services on the host using `localhost`?​
+
+**A:** Inside a Docker container, `localhost` refers to the container itself, not the host machine. This distinction is crucial for networking. To establish a connection from your container to services running on the host, you should use the DNS name `host.docker.internal` instead of `localhost`. This DNS name is specially recognized by Docker to facilitate such connections, effectively treating the host as a reachable entity from within the container, thus bypassing the usual `localhost` scope limitation.
+
+### Q: How do I make my host's services accessible to Docker containers?​
+
+**A:** To make services running on the host accessible to Docker containers, configure these services to listen on all network interfaces, using the IP address `0.0.0.0`, instead of `127.0.0.1` which is limited to `localhost` only. This configuration allows the services to accept connections from any IP address, including Docker containers. It's important to be aware of the security implications of this setup, especially when operating in environments with potential external access. Implementing appropriate security measures, such as firewalls and authentication, can help mitigate risks.
+
+### Q: Why isn't my Open WebUI updating? I've re-pulled/restarted the container, and nothing changed.​
+
+**A:** To update Open WebUI, you must first pull the latest image, then stop and remove the existing container, and finally start a new one. Simply pulling the image isn't enough because the running container is still based on the old version.
+
+**Follow these exact steps:**
+
+  1. **Pull the latest image:**
+         
+         docker pull ghcr.io/open-webui/open-webui:main  
+         
+
+  2. **Stop and Remove the current container:**
+         
+         docker stop open-webui  
+         docker rm open-webui  
+         
+
+  3. **Start the new container with your data attached:**
+         
+         docker run -d -p 3000:8080 -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main  
+         
+
+
+
+
+_(Note: If your container or volume has a different name, adjust the commands accordingly.)_
+
+For a deeper dive into update methods (including automated updates like Watchtower), check our full **[Updating Guide](/getting-started/updating)**.
+
+### Q: Wait, why would I delete my container? Won't I lose my data?​
+
+**A:** In Docker, containers are meant to be "disposable." Your data is safe **only if you have a Volume configured**.
+
+Important: Data Persistence
+
+If you ran your container _without_ the `-v open-webui:/app/backend/data` flag (or a similar volume mount in Docker Compose), your data is stored **inside** the container. In that specific case, deleting the container **will result in permanent data loss**.
+
+Always ensure you follow our **[Quick Start Guide](/getting-started/quick-start)** correctly to set up persistent volumes from the beginning.
+
+When you use a Volume (typically named `open-webui` in our examples), your data stays safe even when the container is deleted. When you start a new container and mount that same volume, the new version of the app attaches to your old data automatically.
+
+**Default Data Path:** On most Linux systems, your volume data is physically stored at: `/var/lib/docker/volumes/open-webui/_data`.
+
+### Q: Should I use the distro-packaged Docker or the official Docker package?​
+
+**A:** We recommend using the official Docker package over distro-packaged versions for running Open WebUI. The official Docker package is frequently updated with the latest features, bug fixes, and security patches, ensuring optimal performance and security. Additionally, it supports important functionalities like `host.docker.internal`, which may not be available in distro-packaged versions. This feature is essential for proper network configurations and connectivity within Docker containers.
+
+By choosing the official Docker package, you benefit from consistent behavior across different environments, more reliable troubleshooting support, and access to the latest Docker advancements. The broader Docker community and resources are also more aligned with the official package, providing you with a wealth of information and support for any issues you might encounter.
+
+Everything you need to run Open WebUI, including your data, remains within your control and your server environment, emphasizing our commitment to your privacy and security. For instructions on installing the official Docker package, please refer to the [Install Docker Engine](https://docs.docker.com/engine/install/) guide on Docker's official documentation site.
+
+### Q: Is GPU support available in Docker?​
+
+**A:** GPU support in Docker is available but varies depending on the platform. Officially, GPU support is provided in Docker for Windows and Docker Engine on Linux. Other platforms, such as Docker Desktop for Linux and MacOS, do not currently offer GPU support. This limitation is important to consider for applications requiring GPU acceleration. For the best experience and to utilize GPU capabilities, we recommend using Docker on platforms that officially support GPU integration.
+
+### Q: Why does Open WebUI emphasize the use of Docker?​
+
+**A:** The decision to use Docker stems from its ability to ensure consistency, isolate dependencies, and simplify deployment across different environments. Docker minimizes compatibility issues and streamlines the process of getting the WebUI up and running, regardless of the underlying system. It's a strategic choice by the project maintainers to harness these benefits, acknowledging that while Docker has a learning curve, the advantages for deployment and maintenance are significant. We understand Docker might not be everyone's preference; however, this approach is central to our project's design and operational efficiency. We view the project's commitment to Docker as a fundamental aspect and encourage those looking for different deployment methods to explore community-driven alternatives.
+
+### Q: Why doesn't Speech-to-Text (STT) and Text-to-Speech (TTS) work in my deployment?​
+
+**A:** The functionality of Speech-to-Text (STT) and Text-to-Speech (TTS) services in your deployment may require HTTPS to operate correctly. Modern browsers enforce security measures that restrict certain features, including STT and TTS, to only work under secure HTTPS connections. If your deployment is not configured to use HTTPS, these services might not function as expected. Ensuring your deployment is accessible over HTTPS can resolve these issues, enabling full functionality of STT/TTS features.
+
+### Q: Why doesn't Open WebUI include built-in HTTPS support?​
+
+**A:** While we understand the desire for an all-in-one solution that includes HTTPS support, we believe such an approach wouldn't adequately serve the diverse needs of our user base. Implementing HTTPS directly within the project could limit flexibility and may not align with the specific requirements or preferences of all users. To ensure that everyone can tailor their setup to their unique environment, we leave the implementation of HTTPS termination to the users for their production deployments. This decision allows for greater adaptability and customization. Though we don't offer official documentation on setting up HTTPS, community members may provide guidance upon request, sharing insights and suggestions based on their experiences.
+
+### Q: I updated/restarted/installed some new software and now Open WebUI isn't working anymore!​
+
+**A:** If your Open WebUI isn't launching post-update or installation of new software, it's likely related to a direct installation approach, especially if you didn't use a virtual environment for your backend dependencies. Direct installations can be sensitive to changes in the system's environment, such as updates or new installations that alter existing dependencies. To avoid conflicts and ensure stability, we recommend using a virtual environment for managing the `requirements.txt` dependencies of your backend. This isolates your Open WebUI dependencies from other system packages, minimizing the risk of such issues.
+
+### Q: I updated/restarted and now I'm being logged out, or getting "Error decrypting tokens" for my tools?​
+
+**A:** This happens because you haven't set a persistent `WEBUI_SECRET_KEY` in your environment variables.
+
+  * **Logouts:** Without this key, Open WebUI generates a random one every time it starts. This invalidates your previous session cookies (JWTs), forcing you to log in again.
+  * **Decryption Errors:** Essential secrets (like OAuth tokens for MCP tools or API keys) are encrypted using this key. If the key changes on restart, Open WebUI cannot decrypt them, leading to errors.
+
+
+
+**Fix:** Set `WEBUI_SECRET_KEY` to a constant, secure string in your Docker Compose or environment config.
+
+### Q: I updated/restarted and now my login isn't working anymore, I had to create a new account and all my chats are gone.​
+
+**A:** This issue typically arises when a Docker container is created without mounting a volume for `/app/backend/data` or if the designated Open WebUI volume (usually named `open-webui` in our examples) was unintentionally deleted. Docker volumes are crucial for persisting your data across container lifecycles. If you find yourself needing to create a new account after a restart, it's likely you've initiated a new container without attaching the existing volume where your data resides. Ensure that your Docker run command includes a volume mount pointing to the correct data location to prevent data loss.
+
+### Q: I tried to login and couldn't, made a new account and now I'm being told my account needs to be activated by an admin.​
+
+**A:** This situation occurs when you forget the password for the initial admin account created during the first setup. The first account is automatically designated as the admin account. Creating a new account without access to the admin account will result in the need for admin activation. Avoiding the loss of the initial admin account credentials is crucial for seamless access and management of Open WebUI. See the [Resetting the Admin Password](/troubleshooting/password-reset) guide for instructions on recovering the admin account.
+
+### Q: Why can't Open WebUI start with an SSL error?​
+
+**A:** The SSL error you're encountering when starting Open WebUI is likely due to the absence of SSL certificates or incorrect configuration of [huggingface.co](https://huggingface.co/). To resolve this issue, you could set up a mirror for HuggingFace, such as [hf-mirror.com](https://hf-mirror.com/), and specify it as the endpoint when starting the Docker container. Use the `-e HF_ENDPOINT=https://hf-mirror.com/` parameter to define the HuggingFace mirror address in the Docker run command. For example, you can modify the Docker run command as follows:
+    
+    
+    docker run -d -p 3000:8080 -e HF_ENDPOINT=https://hf-mirror.com/ --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main  
+    
+
+### Q: Why are my reasoning model's thinking blocks showing as raw text instead of being hidden?​
+
+**A:** This happens if the model's thinking tags are not recognized by Open WebUI. You can customize the tags in the model's Advanced Parameters. For more details, see the **[Reasoning& Thinking Models](/features/chat-features/reasoning-models)** guide.
+
+### Q: RAG with Open WebUI is very bad or not working at all. Why?​
+
+**A:** If you're using **Ollama** , be aware that Ollama sets the context length to **2048 tokens by default**. This means that none of the retrieved data might be used because it doesn't fit within the available context window.
+
+To improve the performance of Retrieval-Augmented Generation (**RAG**) with Open WebUI, you should **increase the context length** to a much larger value (**8192+ tokens**) to ensure that retrieved documents can effectively contribute to the model’s responses.
+
+To do this, configure your **Ollama model params** to allow a larger context window. You can check and modify this setting in your chat directly or from model editor page to enhance the RAG experience significantly.
+
+### Q: I'm getting "The content provided is empty" when uploading files via the API. Why?​
+
+**A:** This is a **race condition** , not an actual empty file. When you upload a file through the API, the endpoint returns immediately with a file ID, but content extraction and embedding computation happen **asynchronously in the background**.
+
+If you immediately try to add the file to a knowledge base before processing completes, the system sees empty content and returns a `400` error.
+
+**Solution:** Poll the file status endpoint until processing is complete:
+    
+    
+    import requests  
+    import time  
+      
+    def wait_for_processing(token, file_id):  
+        url = f'http://localhost:3000/api/v1/files/{file_id}/process/status'  
+        headers = {'Authorization': f'Bearer {token}'}  
+          
+        while True:  
+            status = requests.get(url, headers=headers).json().get('status')  
+            if status == 'completed':  
+                return True  
+            elif status == 'failed':  
+                raise Exception("Processing failed")  
+            time.sleep(2)  # Wait before checking again  
+    
+
+For complete workflow examples, see the **[API Endpoints documentation](/getting-started/api-endpoints#checking-file-processing-status)** and the **[RAG Troubleshooting guide](/troubleshooting/rag#9-api-file-upload-the-content-provided-is-empty-error-)**.
+
+### Q: I asked the model what it is and it gave the wrong answer. Is Open WebUI routing to the wrong model?​
+
+**A:** No—**LLMs do not reliably know their own identity.** When you ask a model "What model are you?" or "Are you GPT-4?", the response is not a system diagnostic. It's simply the model generating text based on patterns in its training data.
+
+Models frequently:
+
+  * Claim to be a different model (e.g., a Llama model claiming to be ChatGPT)
+  * Give outdated information about themselves
+  * Hallucinate version numbers or capabilities
+  * Change their answer depending on how you phrase the question
+
+
+
+**To verify which model you're actually using:**
+
+  1. Check the model selector in the Open WebUI interface
+  2. Look at the **Admin Panel > Settings > Connections** to confirm your API endpoints
+  3. Check your provider's dashboard/logs for the actual API calls being made
+
+
+
+Asking the model itself is **not** a valid way to diagnose routing issues. If you suspect a configuration problem, check your connection settings and API keys instead.
+
+### Q: But why can models on official chat interfaces (like ChatGPT or Claude.ai) correctly identify themselves?​
+
+**A:** Because the provider **injects a system prompt** that explicitly tells the model what it is. When you use ChatGPT, OpenAI's interface includes a hidden system message like "You are ChatGPT, a large language model trained by OpenAI..." before your conversation begins.
+
+The model isn't "aware" of itself—it's simply been instructed to claim a specific identity. You can do the same thing in Open WebUI by adding a system prompt to your model configuration (e.g., "You are Llama 3.3 70B..."). The model will then confidently repeat whatever identity you've told it to claim.
+
+This is also why the same model accessed through different interfaces might give different answers about its identity—it depends entirely on what system prompt (if any) was provided.
+
+### Q: Why am I seeing multiple API requests when I only send one message? Why is my token usage higher than expected?​
+
+**A:** Open WebUI uses **Task Models** to power background features that enhance your chat experience. When you send a single message, additional API calls may be made for:
+
+  * **Title Generation** : Automatically generating a title for new chats
+  * **Tag Generation** : Auto-tagging chats for organization
+  * **Query Generation** : Creating optimized search queries for RAG (when you attach files or knowledge)
+  * **Web Search Queries** : Generating search terms when web search is enabled
+  * **Autocomplete Suggestions** : If enabled
+
+
+
+By default, these tasks use the **same model** you're chatting with. If you're using an expensive API model (like GPT-4 or Claude), this can significantly increase your costs.
+
+**To reduce API costs:**
+
+  1. Go to **Admin Panel > Settings > Interface** (for title/tag generation settings)
+  2. Configure a **Task Model** under **Admin Panel > Settings > Models** to use a smaller, cheaper model (like GPT-4o-mini) or a local model for background tasks
+  3. Disable features you don't need (auto-title, auto-tags, etc.)
+
+
+
+Cost-Saving Recommendation
+
+Set your Task Model to a fast, inexpensive model (or a local model via Ollama) while keeping your primary chat model as a more capable one. This gives you the best of both worlds: smart responses for your conversations, cheap/free processing for background tasks.
+
+For more optimization tips, see the **[Performance Tips Guide](/troubleshooting/performance)**.
+
+### Q: Is MCP (Model Context Protocol) supported in Open WebUI?​
+
+**A:** Yes, Open WebUI now includes **native support for MCP Streamable HTTP** , enabling direct, first-class integration with MCP tools that communicate over the standard HTTP transport. For any **other MCP transports or non-HTTP implementations** , you should use our official proxy adapter, **MCPO** , available at 👉 <https://github.com/open-webui/mcpo>. MCPO provides a unified OpenAPI-compatible layer that bridges alternative MCP transports into Open WebUI safely and consistently. This architecture ensures maximum compatibility, strict security boundaries, and predictable tool behavior across different environments while keeping Open WebUI backend-agnostic and maintainable.
+
+### Q: Why doesn't Open WebUI support [Specific Provider]'s latest API (e.g. OpenAI Responses API)?​
+
+**A:** Open WebUI is built around **universal protocols** , not specific providers. Our core philosophy is to support standard, widely-adopted APIs like the **OpenAI Chat Completions protocol**.
+
+This protocol-centric design ensures that Open WebUI remains backend-agnostic and compatible with dozens of providers (like OpenRouter, LiteLLM, vLLM, and Groq) simultaneously. We avoid implementing proprietary, provider-specific APIs (such as OpenAI's stateful Responses API or Anthropic's Messages API) to prevent unsustainable architectural bloat and to maintain a truly open ecosystem.
+
+If you need functionality exclusive to a proprietary API (like OpenAI's hidden reasoning traces), we recommend using a proxy like **LiteLLM** or **OpenRouter** , which translate those proprietary features into the standard Chat Completions protocol that Open WebUI supports.
+
+### Q: Why is the frontend integrated into the same Docker image? Isn't this unscalable or problematic?​
+
+The assumption that bundling the frontend with the backend is unscalable comes from a misunderstanding of how modern Single-Page Applications work. Open WebUI’s frontend is a static SPA, meaning it consists only of HTML, CSS, and JavaScript files with no runtime coupling to the backend. Because these files are static, lightweight, and require no separate server, including them in the same image has no impact on scalability. This approach simplifies deployment, ensures every replica serves the exact same assets, and eliminates unnecessary moving parts. If you prefer, you can still host the SPA on any CDN or static hosting service and point it to a remote backend, but packaging both together is the standard and most practical method for containerized SPAs.
+
+### Q: Is Open WebUI scalable for large organizations or enterprise deployments?​
+
+**A:** Yes, **Open WebUI is architected for massive scalability and production readiness.** It’s already trusted in deployments supporting extremely high user counts—**think tens or even hundreds of thousands of seats** —used by universities, multinational enterprises, and major organizations worldwide.
+
+Open WebUI’s stateless, container-first architecture means you’re never bottlenecked by a single server. Through horizontal scaling, flexible storage backends, externalized authentication and database support, and full container orchestration compatibility (for example, Kubernetes or Docker Swarm), you can build robust, high-availability clusters to meet even the most demanding enterprise requirements.
+
+With the right infrastructure configuration, Open WebUI will effortlessly scale from pilot projects to mission-critical worldwide rollouts.
+
+### Q: How can I deploy Open WebUI in a highly available, large-scale production environment?​
+
+**A:** For organizations with demanding uptime and scale requirements, Open WebUI is designed to plug into modern production environments:
+
+  * **Multiple containers** (instances) behind a load balancer for resilience and optimal performance
+  * **External databases and persistent storage** for scalable, reliable data
+  * **Integration with enterprise authentication** (like SSO/OIDC/LDAP) for seamless and secure login
+  * **Observability and monitoring** via modern log/metrics tools
+
+
+
+If you’re planning a high-availability, enterprise-grade deployment, we recommend reviewing this excellent community resource:
+
+👉 [The SRE's Guide to High Availability Open WebUI Deployment Architecture](http://taylorwilsdon.medium.com/the-sres-guide-to-high-availability-open-webui-deployment-architecture-2ee42654eced) _(This provides a strong technical overview and best practices for large-scale Open WebUI architecture.)_
+
+Open WebUI is designed from day one to not just handle, but thrive at scale—serving large organizations, universities, and enterprises worldwide.
+
+### Q: How often is Open WebUI updated? (Release Schedule)​
+
+**A:** We aim to ship **major releases weekly** , with **bug fixes and minor updates delivered as needed**. However, this is not a rigid schedule—some weeks may see multiple releases, while others might have none at all.
+
+To stay informed, you can follow release notes and announcements on our [GitHub Releases page](https://github.com/open-webui/open-webui/releases).
+
+### Q: Where do I report non-compliant Open WebUI deployments that violate the license?​
+
+If you encounter an Open WebUI deployment that appears to violate the Open WebUI license—such as removed branding where it is not permitted, misleading white-labeling, commercial misuse, or any form of unauthorized redistribution—you can confidentially report it to our compliance team.
+
+📩 **Email:** **[reports@openwebui.com](mailto:reports@openwebui.com)** Please include any relevant details (screenshots, URLs, description of usage, etc.) so we can investigate appropriately.
+
+We review every report in good faith and handle all submissions discreetly. Protecting the health, clarity, and integrity of the Open WebUI ecosystem helps us keep the project sustainable, fair, and openly accessible for everyone.
+
+### Need Further Assistance?​
+
+If you have any further questions or concerns, please reach out to our [GitHub Issues page](https://github.com/open-webui/open-webui/issues) or our [Discord channel](https://discord.gg/5rJgQTnV4s) for more help and information.
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/faq.mdx)
+
+[PreviousDeployment & Community Guides](/tutorials/deployment/)[Next🛣️ Roadmap](/roadmap)
+
+  * Q: How do I customize the logo and branding?
+  * Q: Is my data being sent anywhere?
+  * Q: Can I use Open WebUI in outer space (e.g., Mars and beyond) or other extreme environments?
+  * Q: Why am I asked to sign up? Where are my data being sent to?
+  * Q: Why can't my Docker container connect to services on the host using `localhost`?
+  * Q: How do I make my host's services accessible to Docker containers?
+  * Q: Why isn't my Open WebUI updating? I've re-pulled/restarted the container, and nothing changed.
+  * Q: Wait, why would I delete my container? Won't I lose my data?
+  * Q: Should I use the distro-packaged Docker or the official Docker package?
+  * Q: Is GPU support available in Docker?
+  * Q: Why does Open WebUI emphasize the use of Docker?
+  * Q: Why doesn't Speech-to-Text (STT) and Text-to-Speech (TTS) work in my deployment?
+  * Q: Why doesn't Open WebUI include built-in HTTPS support?
+  * Q: I updated/restarted/installed some new software and now Open WebUI isn't working anymore!
+  * Q: I updated/restarted and now I'm being logged out, or getting "Error decrypting tokens" for my tools?
+  * Q: I updated/restarted and now my login isn't working anymore, I had to create a new account and all my chats are gone.
+  * Q: I tried to login and couldn't, made a new account and now I'm being told my account needs to be activated by an admin.
+  * Q: Why can't Open WebUI start with an SSL error?
+  * Q: Why are my reasoning model's thinking blocks showing as raw text instead of being hidden?
+  * Q: RAG with Open WebUI is very bad or not working at all. Why?
+  * Q: I'm getting "The content provided is empty" when uploading files via the API. Why?
+  * Q: I asked the model what it is and it gave the wrong answer. Is Open WebUI routing to the wrong model?
+  * Q: But why can models on official chat interfaces (like ChatGPT or Claude.ai) correctly identify themselves?
+  * Q: Why am I seeing multiple API requests when I only send one message? Why is my token usage higher than expected?
+  * Q: Is MCP (Model Context Protocol) supported in Open WebUI?
+  * Q: Why doesn't Open WebUI support [Specific Provider]'s latest API (e.g. OpenAI Responses API)?
+  * Q: Why is the frontend integrated into the same Docker image? Isn't this unscalable or problematic?
+  * Q: Is Open WebUI scalable for large organizations or enterprise deployments?
+  * Q: How can I deploy Open WebUI in a highly available, large-scale production environment?
+  * Q: How often is Open WebUI updated? (Release Schedule)
+  * Q: Where do I report non-compliant Open WebUI deployments that violate the license?
+  * Need Further Assistance?
+
+

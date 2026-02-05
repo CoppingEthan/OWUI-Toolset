@@ -1,0 +1,60 @@
+{
+  "name": "owui-toolset-v2",
+  "version": "2.0.0",
+  "description": "External AI orchestration server for OpenWebUI with multi-provider LLM support, tool execution, and token tracking",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "dashboard": "node src/dashboard/server.js",
+    "dashboard:dev": "node --watch src/dashboard/server.js",
+    "db:init": "node src/database/init.js",
+    "test": "node tests/test-all.js",
+    "test:openai": "node tests/test-openai.js",
+    "test:anthropic": "node tests/test-anthropic.js",
+    "test:ollama": "node tests/test-ollama.js",
+    "test:tools": "node tests/test-tool-calling.js",
+    "test:native-openai": "node tests/native-tools-openai.js",
+    "test:native-anthropic": "node tests/native-tools-anthropic.js",
+    "test:native-ollama": "node tests/native-tools-ollama.js",
+    "test:anthropic-mixed": "node tests/test-anthropic-mixed-content.js",
+    "test:benchmark": "node tests/benchmark-native-tools.js"
+  },
+  "keywords": [
+    "openwebui",
+    "llm",
+    "anthropic",
+    "openai",
+    "ollama",
+    "ai-orchestration",
+    "token-tracking"
+  ],
+  "author": "OWUI Toolset V2",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "axios": "^1.6.5",
+    "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "fast-xml-parser": "^5.3.3",
+    "file-type": "^21.3.0",
+    "markdown-pdf": "^11.0.0",
+    "multer": "^2.0.2",
+    "music-metadata": "^11.10.6",
+    "ollama": "^0.5.0",
+    "openai": "^4.67.0",
+    "sharp": "^0.34.5",
+    "sql.js": "^1.10.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

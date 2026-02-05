@@ -1,0 +1,315 @@
+# https://docs.openwebui.com/features/plugin/tools/
+
+  * [](/)
+  * [⭐ Features](/features/)
+  * [Tools & Functions (Plugins)](/features/plugin/)
+  * Tools
+
+
+
+On this page
+
+# What are Tools?
+
+⚙️ Tools are the various ways you can extend an LLM's capabilities beyond simple text generation. When enabled, they allow your chatbot to do amazing things — like search the web, scrape data, generate images, talk back using AI voices, and more.
+
+Because there are several ways to integrate "Tools" in Open WebUI, it's important to understand which type you are using.
+
+* * *
+
+## Tooling Taxonomy: Which "Tool" are you using?​
+
+🧩 Users often encounter the term "Tools" in different contexts. Here is how to distinguish them:
+
+Type| Location in UI| Best For...| Source  
+---|---|---|---  
+**Native Features**|  Admin/Settings| Core platform functionality| Built-in to Open WebUI  
+**Workspace Tools**| `Workspace > Tools`| User-created or community Python scripts| [Community Library](https://openwebui.com/search)  
+**Native MCP (HTTP)**| `Settings > Connections`| Standard MCP servers reachable via HTTP/SSE| External MCP Servers  
+**MCP via Proxy (MCPO)**| `Settings > Connections`| Local stdio-based MCP servers (e.g., Claude Desktop tools)| [MCPO Adapter](https://github.com/open-webui/mcpo)  
+**OpenAPI Servers**| `Settings > Connections`| Standard REST/OpenAPI web services| External Web APIs  
+  
+### 1\. Native Features (Built-in)​
+
+These are deeply integrated into Open WebUI and generally don't require external scripts.
+
+  * **Web Search** : Integrated via engines like SearXNG, Google, or Tavily.
+  * **URL Fetching** : Extract text content directly from websites using `#` or native tools.
+  * **Image Generation** : Integrated with DALL-E, ComfyUI, or Automatic1111.
+  * **Memory** : The ability for models to remember facts about you across chats.
+  * **RAG (Knowledge)** : The ability to query uploaded documents (`#`).
+
+
+
+In **Native Mode**, these features are exposed as **Tools** that the model can call independently.
+
+### 2\. Workspace Tools (Custom Plugins)​
+
+These are **Python scripts** that run directly within the Open WebUI environment.
+
+  * **Capability** : Can do anything Python can do (web scraping, complex math, API calls).
+  * **Access** : Managed via the `Workspace` menu.
+  * **Safety** : Always review code before importing, as these run on your server.
+  * **⚠️ Security Warning** : Normal or untrusted users should **not** be given permission to access the Workspace Tools section. This access allows a user to upload and execute arbitrary Python code on your server, which could lead to a full system compromise.
+
+
+
+### 3\. MCP (Model Context Protocol)​
+
+🔌 MCP is an open standard that allows LLMs to interact with external data and tools.
+
+  * **Native HTTP MCP** : Open WebUI can connect directly to any MCP server that exposes an HTTP/SSE endpoint.
+  * **MCPO (Proxy)** : Most community MCP servers use `stdio` (local command line). To use these in Open WebUI, you use the [**MCPO Proxy**](/features/plugin/tools/openapi-servers/mcp) to bridge the connection.
+
+
+
+### 4\. OpenAPI / Function Calling Servers​
+
+Generic web servers that provide an OpenAPI (`.json` or `.yaml`) specification. Open WebUI can ingest these specs and treat every endpoint as a tool.
+
+* * *
+
+## How to Install & Manage Workspace Tools​
+
+📦 Workspace Tools are the most common way to extend your instance with community features.
+
+  1. Go to [Community Tool Library](https://openwebui.com/search)
+  2. Choose a Tool, then click the **Get** button.
+  3. Enter your Open WebUI instance’s URL (e.g. `http://localhost:3000`).
+  4. Click **Import to WebUI**.
+
+
+
+Safety Tip
+
+Never import a Tool you don’t recognize or trust. These are Python scripts and might run unsafe code on your host system. **Crucially, ensure you only grant "Tool" permissions to trusted users** , as the ability to create or import tools is equivalent to the ability to run arbitrary code on the server.
+
+* * *
+
+## How to Use Tools in Chat​
+
+🔧 Once installed or connected, here’s how to enable them for your conversations:
+
+### Option 1: Enable on-the-fly (Specific Chat)​
+
+While chatting, click the **➕ (plus)** icon in the input area. You’ll see a list of available Tools — you can enable them specifically for that session.
+
+### Option 2: Enable by Default (Global/Model Level)​
+
+  1. Go to **Workspace ➡️ Models**.
+  2. Choose the model you’re using and click the ✏️ edit icon.
+  3. Scroll to the **Tools** section.
+  4. ✅ Check the Tools you want this model to always have access to by default.
+  5. Click **Save**.
+
+
+
+You can also let your LLM auto-select the right Tools using the [**AutoTool Filter**](https://openwebui.com/f/hub/autotool_filter/).
+
+* * *
+
+## Tool Calling Modes: Default vs. Native​
+
+Open WebUI offers two distinct ways for models to interact with tools: a standard **Default Mode** and a high-performance **Native Mode (Agentic Mode)**. Choosing the right mode depends on your model's capabilities and your performance requirements.
+
+### 🟡 Default Mode (Prompt-based)​
+
+In Default Mode, Open WebUI manages tool selection by injecting a specific prompt template that guides the model to output a tool request.
+
+  * **Compatibility** : Works with **practically any model** , including older or smaller local models that lack native function-calling support.
+  * **Flexibility** : Highly customizable via prompt templates.
+  * **Caveat** : Can be slower (requires extra tokens) and less reliable for complex, multi-step tool chaining.
+
+
+
+### 🟢 Native Mode (Agentic Mode / System Function Calling)​
+
+Native Mode (also called **Agentic Mode**) leverages the model's built-in capability to handle tool definitions and return structured tool calls (JSON). This is the **recommended mode** for high-performance agentic workflows.
+
+Model Quality Matters
+
+**Agentic tool calling requires high-quality models to work reliably.** While small local models may technically support function calling, they often struggle with the complex reasoning required for multi-step tool usage. For best results, use frontier models like **GPT-5** , **Claude 4.5 Sonnet** , **Gemini 3 Flash** , or **MiniMax M2.1**. Small local models may produce malformed JSON or fail to follow the strict state management required for agentic behavior.
+
+#### Why use Native Mode (Agentic Mode)?​
+
+  * **Speed & Efficiency**: Lower latency as it avoids bulky prompt-based tool selection.
+  * **Reliability** : Higher accuracy in following tool schemas (with quality models).
+  * **Multi-step Chaining** : Essential for **Agentic Research** and **Interleaved Thinking** where a model needs to call multiple tools in succession.
+  * **Autonomous Decision-Making** : Models can decide when to search, which tools to use, and how to combine results.
+
+
+
+#### How to Enable Native Mode (Agentic Mode)​
+
+Native Mode can be enabled at two levels:
+
+  1. **Global/Administrator Level (Recommended)** :
+     * Navigate to **Admin Panel > Settings > Models**.
+     * Scroll to **Model Specific Settings** for your target model.
+     * Under **Advanced Parameters** , find the **Function Calling** dropdown and select `Native`.
+  2. **Per-Chat Basis** :
+     * Inside a chat, click the ⚙️ **Chat Controls** icon.
+     * Go to **Advanced Params** and set **Function Calling** to `Native`.
+
+
+
+![Chat Controls](/assets/images/chat-controls-28858e9a3b46384cbf7496bb159b653c.png)
+
+#### Model Requirements & Caveats​
+
+Recommended Models for Agentic Mode
+
+For reliable agentic tool calling, use high-tier frontier models:
+
+  * **GPT-5** (OpenAI)
+  * **Claude 4.5 Sonnet** (Anthropic)
+  * **Gemini 3 Flash** (Google)
+  * **MiniMax M2.1**
+
+
+
+These models excel at multi-step reasoning, proper JSON formatting, and autonomous tool selection.
+
+  * **Large Local Models** : Some large local models (e.g., Qwen 3 32B, Llama 3.3 70B) can work with Native Mode, but results vary significantly by model quality.
+  * **Small Local Models Warning** : **Small local models** (under 30B parameters) often struggle with Native Mode. They may produce malformed JSON, fail to follow strict state management, or make poor tool selection decisions. For these models, **Default Mode** is usually more reliable.
+
+Feature| Default Mode| Native Mode  
+---|---|---  
+**Latency**|  Medium/High| Low  
+**Model Compatibility**|  Universal| Requires Tool-Calling Support  
+**Logic**|  Prompt-based (Open WebUI)| Model-native (API/Ollama)  
+**Complex Chaining**|  ⚠️ Limited| ✅ Excellent  
+  
+### Built-in System Tools (Native/Agentic Mode)​
+
+🛠️ When **Native Mode (Agentic Mode)** is enabled, Open WebUI automatically injects powerful system tools based on the features toggled for the chat. This unlocks truly agentic behaviors where capable models (like GPT-5, Claude 4.5 Sonnet, Gemini 3 Flash, or MiniMax M2.1) can perform multi-step research, explore knowledge bases, or manage user memory autonomously.
+
+Tool| Purpose| Requirements  
+---|---|---  
+**Search & Web**| |   
+`search_web`| Search the public web for information. Best for current events, external references, or topics not covered in internal documents.| `ENABLE_WEB_SEARCH` enabled.  
+`fetch_url`| Visits a URL and extracts text content via the Web Loader.| Part of Web Search feature.  
+**Knowledge Base**| |   
+`list_knowledge_bases`| List the user's accessible knowledge bases with file counts.| Always available.  
+`query_knowledge_bases`| Search knowledge bases by semantic similarity to query. Finds KBs whose name/description match the meaning of your query. Use this to discover relevant knowledge bases before querying their files.| Always available.  
+`search_knowledge_bases`| Search knowledge bases by name and description.| Always available.  
+`query_knowledge_files`| Search internal knowledge base files using semantic/vector search. This should be your first choice for finding information before searching the web.| Always available.  
+`search_knowledge_files`| Search files across accessible knowledge bases by filename.| Always available.  
+`view_knowledge_file`| Get the full content of a file from a knowledge base.| Always available.  
+**Image Gen**| |   
+`generate_image`| Generates a new image based on a prompt (supports `steps`).| `ENABLE_IMAGE_GENERATION` enabled.  
+`edit_image`| Edits an existing image based on a prompt and URL.| `ENABLE_IMAGE_EDIT` enabled.  
+**Memory**| |   
+`search_memories`| Searches the user's personal memory/personalization bank. Supports an optional `count` parameter to specify how many memories to return (default: 5).| Memory feature enabled.  
+`add_memory`| Stores a new fact in the user's personalization memory.| Memory feature enabled.  
+`replace_memory_content`| Updates an existing memory record by its unique ID.| Memory feature enabled.  
+**Notes**| |   
+`search_notes`| Search the user's notes by title and content.| `ENABLE_NOTES` enabled.  
+`view_note`| Get the full markdown content of a specific note.| `ENABLE_NOTES` enabled.  
+`write_note`| Create a new private note for the user.| `ENABLE_NOTES` enabled.  
+`replace_note_content`| Update an existing note's content or title.| `ENABLE_NOTES` enabled.  
+**Chat History**| |   
+`search_chats`| Search across the user's previous conversation history.| Always available.  
+`view_chat`| Retrieve the full message history of a specific previous chat.| Always available.  
+**Channels**| |   
+`search_channels`| Find public or accessible channels by name/description.| `ENABLE_CHANNELS` enabled.  
+`search_channel_messages`| Search for specific messages inside accessible channels.| `ENABLE_CHANNELS` enabled.  
+`view_channel_message`| View a specific message or its details in a channel.| `ENABLE_CHANNELS` enabled.  
+`view_channel_thread`| View a full message thread/replies in a channel.| `ENABLE_CHANNELS` enabled.  
+**Time Tools**| |   
+`get_current_timestamp`| Get the current UTC Unix timestamp and ISO date.| Always available.  
+`calculate_timestamp`| Calculate relative timestamps (e.g., "3 days ago").| Always available.  
+  
+Automatic Timezone Detection
+
+Open WebUI automatically detects and stores your timezone when you log in. This allows time-related tools and features to provide accurate local times without any manual configuration. Your timezone is determined from your browser settings.
+
+**Why use these?** It allows for **Deep Research** (searching the web multiple times, or querying knowledge bases), **Contextual Awareness** (looking up previous chats or notes), **Dynamic Personalization** (saving facts), and **Precise Automation** (generating content based on existing notes or documents).
+
+#### Disabling Builtin Tools (Per-Model)​
+
+The **Builtin Tools** capability can be toggled on or off for each model in the **Workspace > Models** editor under **Capabilities**. When enabled (the default), all the system tools listed above are automatically injected when using Native Mode.
+
+**When to disable Builtin Tools:**
+
+Scenario| Reason to Disable  
+---|---  
+**Model doesn't support function calling**|  Smaller or older models may not handle the `tools` parameter correctly  
+**Simpler/predictable behavior needed**|  You want the model to work only with pre-injected context, no autonomous tool calls  
+**Security/control concerns**|  Prevents the model from actively querying knowledge bases, searching chats, accessing memories, etc.  
+**Token efficiency**|  Tool specifications consume tokens; disabling saves context window space  
+  
+**What happens when Builtin Tools is disabled:**
+
+  1. **No tool injection** : The model won't receive any of the built-in system tools, even in Native Mode.
+  2. **RAG still works** (if File Context is enabled): Attached files are still processed via RAG and injected as context.
+  3. **No autonomous retrieval** : The model cannot decide to search knowledge bases or fetch additional information—it works only with what's provided upfront.
+
+
+
+Builtin Tools vs File Context
+
+**Builtin Tools** controls whether the model gets _tools_ for autonomous retrieval. It does **not** control whether file content is injected via RAG—that's controlled by the separate **File Context** capability.
+
+  * **File Context** = Whether Open WebUI extracts and injects file content (RAG processing)
+  * **Builtin Tools** = Whether the model gets tools to autonomously search/retrieve additional content
+
+
+
+See [File Context vs Builtin Tools](/features/rag/#file-context-vs-builtin-tools) for a detailed comparison.
+
+### Interleaved Thinking​
+
+🧠 When using **Native Mode (Agentic Mode)** , high-tier models can engage in **Interleaved Thinking**. This is a powerful "Thought → Action → Thought → Action → Thought → ..." loop where the model can reason about a task, execute one or more tools, evaluate the results, and then decide on its next move.
+
+Quality Models Required
+
+Interleaved thinking requires models with strong reasoning capabilities. This feature works best with frontier models (GPT-5, Claude 4.5+, Gemini 3+) that can maintain context across multiple tool calls and make intelligent decisions about which tools to use when.
+
+This is fundamentally different from a single-shot tool call. In an interleaved workflow, the model follows a cycle:
+
+  1. **Reason** : Analyze the user's intent and identify information gaps.
+  2. **Act** : Call a tool (e.g., `query_knowledge_files` for internal docs or `search_web` and `fetch_url` for web research).
+  3. **Think** : Read the tool's output and update its internal understanding.
+  4. **Iterate** : If the answer isn't clear, call another tool (e.g., `view_knowledge_file` to read a specific document or `fetch_url` to read a specific page) or refine the search.
+  5. **Finalize** : Only after completing this "Deep Research" cycle does the model provide a final, grounded answer.
+
+
+
+This behavior is what transforms a standard chatbot into an **Agentic AI** capable of solving complex, multi-step problems autonomously.
+
+* * *
+
+* * *
+
+## 🚀 Summary & Next Steps​
+
+Tools bring your AI to life by giving it hands to interact with the world.
+
+  * **Browse Tools** : [openwebui.com/search](https://openwebui.com/search)
+  * **Advanced Setup** : Learn more about [MCP Support](/features/plugin/tools/openapi-servers/mcp)
+  * **Development** : [Writing your own Custom Toolkits](/features/plugin/tools/development)
+
+
+
+[Edit this page](https://github.com/open-webui/docs/blob/main/docs/features/plugin/tools/index.mdx)
+
+[PreviousPipe Function](/features/plugin/functions/pipe)[NextDevelopment](/features/plugin/tools/development)
+
+  * Tooling Taxonomy: Which "Tool" are you using?
+    * 1\. Native Features (Built-in)
+    * 2\. Workspace Tools (Custom Plugins)
+    * 3\. MCP (Model Context Protocol)
+    * 4\. OpenAPI / Function Calling Servers
+  * How to Install & Manage Workspace Tools
+  * How to Use Tools in Chat
+    * Option 1: Enable on-the-fly (Specific Chat)
+    * Option 2: Enable by Default (Global/Model Level)
+  * Tool Calling Modes: Default vs. Native
+    * 🟡 Default Mode (Prompt-based)
+    * 🟢 Native Mode (Agentic Mode / System Function Calling)
+    * Built-in System Tools (Native/Agentic Mode)
+    * Interleaved Thinking
+  * 🚀 Summary & Next Steps
+
+
