@@ -56,6 +56,8 @@ class ContainerManager {
     const volumePath = path.join(projectRoot, 'data', safeEmail, safeConvId, 'volume');
 
     fs.mkdirSync(volumePath, { recursive: true });
+    // Ensure sandbox user (UID 1000) can write to the mounted volume
+    fs.chmodSync(volumePath, 0o777);
 
     // Check if a container with this name already exists (orphaned from previous run)
     const containerName = `sandbox-${safeConvId}`;
@@ -72,6 +74,8 @@ class ContainerManager {
       '--read-only',
       '--tmpfs', '/tmp:size=256m,mode=1777',
       '--tmpfs', '/var/tmp:size=64m,mode=1777',
+      '--tmpfs', '/home/sandbox/.cache:size=64m,mode=0755,uid=1000,gid=1000',
+      '--tmpfs', '/home/sandbox/.config:size=16m,mode=0755,uid=1000,gid=1000',
       '--network', 'sandbox_network',
       '--cap-drop', 'ALL',
       '--security-opt', 'no-new-privileges:true',

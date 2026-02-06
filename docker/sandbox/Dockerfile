@@ -40,6 +40,12 @@ RUN apt-get update && apt-get install -y \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
+# Python symlink (many scripts use 'python' not 'python3')
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Writable matplotlib config (rootfs is read-only, /tmp is tmpfs)
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
 # Python packages - data science, web, documents, media
 RUN pip3 install --break-system-packages --ignore-installed \
     # Data science core
