@@ -73,6 +73,7 @@ export async function chatCompletion({
   config,
   onText,
   onToolCall,
+  onToolOutput,
   onSource,
   stream = false,
   maxIterations = 5,
@@ -88,6 +89,7 @@ export async function chatCompletion({
     config,
     onText,
     onToolCall,
+    onToolOutput,
     onSource,
     maxIterations,
     ...(provider === 'openai' && { strictMode })

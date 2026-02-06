@@ -175,7 +175,7 @@ function convertMessagesToResponsesInput(messages) {
  * @param {function} onSource - Callback for source citations
  * @returns {Promise<array>} - Tool result items for input (function_call_output format)
  */
-async function handleToolCalls(toolCalls, config, onToolCall, onSource) {
+async function handleToolCalls(toolCalls, config, onToolCall, onSource, onToolOutput) {
   if (!toolCalls || toolCalls.length === 0) {
     return null;
   }
@@ -198,12 +198,33 @@ async function handleToolCalls(toolCalls, config, onToolCall, onSource) {
       });
     }
 
+    // Build callbacks for sandbox output streaming
+    let outputStarted = false;
+    const toolCallbacks = {};
+    if (onToolOutput) {
+      toolCallbacks.onProgress = ({ type, chunk }) => {
+        if (type === 'output' && chunk) {
+          if (!outputStarted) {
+            onToolOutput('\n```\n');
+            outputStarted = true;
+          }
+          onToolOutput(chunk);
+        }
+      };
+    }
+
     // Execute the tool
     const executionResult = await executeToolCall(
       toolCall.name,
       args,
-      config
+      config,
+      toolCallbacks
     );
+
+    // Close code block if we streamed any output
+    if (outputStarted) {
+      onToolOutput('```\n\n');
+    }
 
     // Emit sources for OWUI citation panel
     if (onSource && executionResult.sources && executionResult.sources.length > 0) {
@@ -283,6 +304,7 @@ export async function chatCompletion({
   config,
   onText,
   onToolCall,
+  onToolOutput,
   onSource,
   maxIterations = 5,
   strictMode = false
@@ -357,7 +379,7 @@ export async function chatCompletion({
     // Check for tool calls
     if (toolCalls.length > 0) {
       // Execute tools
-      const toolResults = await handleToolCalls(toolCalls, config, onToolCall, onSource);
+      const toolResults = await handleToolCalls(toolCalls, config, onToolCall, onSource, onToolOutput);
 
       if (toolResults) {
         // For next iteration, only send tool results (use previous_response_id for context)
@@ -394,6 +416,7 @@ export async function chatCompletionStream({
   config,
   onText,
   onToolCall,
+  onToolOutput,
   onSource,
   maxIterations = 5,
   strictMode = false
@@ -519,7 +542,7 @@ export async function chatCompletionStream({
     // Check for tool calls
     if (toolCalls.length > 0) {
       // Execute tools
-      const toolResults = await handleToolCalls(toolCalls, config, onToolCall, onSource);
+      const toolResults = await handleToolCalls(toolCalls, config, onToolCall, onSource, onToolOutput);
 
       if (toolResults) {
         // For next iteration, only send tool results (use previous_response_id for context)

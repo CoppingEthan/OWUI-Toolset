@@ -204,7 +204,7 @@ function addToolsCacheControl(tools) {
  * @param {function} onSource - Callback for source citations
  * @returns {Promise<object>} - Tool execution results
  */
-async function handleToolCalls(response, config, onToolCall, onSource) {
+async function handleToolCalls(response, config, onToolCall, onSource, onToolOutput) {
   const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
 
   if (toolUseBlocks.length === 0) {
@@ -224,12 +224,33 @@ async function handleToolCalls(response, config, onToolCall, onSource) {
       });
     }
 
+    // Build callbacks for sandbox output streaming
+    let outputStarted = false;
+    const toolCallbacks = {};
+    if (onToolOutput) {
+      toolCallbacks.onProgress = ({ type, chunk }) => {
+        if (type === 'output' && chunk) {
+          if (!outputStarted) {
+            onToolOutput('\n```\n');
+            outputStarted = true;
+          }
+          onToolOutput(chunk);
+        }
+      };
+    }
+
     // Execute the tool
     const executionResult = await executeToolCall(
       toolUse.name,
       toolUse.input,
-      config
+      config,
+      toolCallbacks
     );
+
+    // Close code block if we streamed any output
+    if (outputStarted) {
+      onToolOutput('```\n\n');
+    }
 
     // Emit sources for OWUI citation panel
     if (onSource && executionResult.sources && executionResult.sources.length > 0) {
@@ -307,6 +328,7 @@ export async function chatCompletion({
   config,
   onText,
   onToolCall,
+  onToolOutput,
   onSource,
   maxIterations = 5
 }) {
@@ -364,7 +386,7 @@ export async function chatCompletion({
       });
 
       // Execute tools
-      const toolResults = await handleToolCalls(response, config, onToolCall, onSource);
+      const toolResults = await handleToolCalls(response, config, onToolCall, onSource, onToolOutput);
 
       if (toolResults) {
         // Add tool results as user message
@@ -402,6 +424,7 @@ export async function chatCompletionStream({
   config,
   onText,
   onToolCall,
+  onToolOutput,
   onSource,
   maxIterations = 5
 }) {
@@ -486,7 +509,8 @@ export async function chatCompletionStream({
         { content: currentResponse.content },
         config,
         onToolCall,
-        onSource
+        onSource,
+        onToolOutput
       );
 
       if (toolResults) {

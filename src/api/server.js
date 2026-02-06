@@ -920,6 +920,12 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
             });
           },
 
+          // Stream sandbox console output inside code blocks
+          onToolOutput: (chunk) => {
+            assistantResponse += chunk;
+            sendChunk(chunk);
+          },
+
           // Emit sources for OWUI citation panel
           // Pipeline extracts data.data, so wrap source in {data: source}
           onSource: (source) => {
@@ -1030,6 +1036,11 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
               success: true,
               execution_time_ms: 0
             });
+          },
+
+          // Collect sandbox console output for non-streaming response
+          onToolOutput: (chunk) => {
+            assistantResponse += chunk;
           },
 
           // Sources are collected but not sent in non-streaming mode
