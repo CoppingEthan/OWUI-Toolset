@@ -182,10 +182,12 @@ class ContainerManager {
       proc.stdout.on('data', (data) => {
         stdout += data.toString();
       });
+      proc.stdout.on('error', () => {});
 
       proc.stderr.on('data', (data) => {
         stderr += data.toString();
       });
+      proc.stderr.on('error', () => {});
 
       proc.on('close', async (exitCode) => {
         // Check for OOM kill
@@ -240,9 +242,11 @@ class ContainerManager {
    * @returns {NodeJS.Timeout}
    */
   scheduleCleanup(chatUid) {
-    return setTimeout(async () => {
+    return setTimeout(() => {
       console.log(`⏰ Inactivity timeout for sandbox-${chatUid}`);
-      await this.cleanupContainer(chatUid);
+      this.cleanupContainer(chatUid).catch(err => {
+        console.error(`Failed to cleanup sandbox-${chatUid}:`, err.message);
+      });
     }, this.INACTIVITY_TIMEOUT_MS);
   }
 

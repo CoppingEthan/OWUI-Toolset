@@ -55,6 +55,7 @@ export async function executeWithStreaming(chatUid, email, command, options = {}
         console.error('Error in onStdout callback:', err.message);
       }
     });
+    proc.stdout.on('error', () => {});
 
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString();
@@ -65,6 +66,7 @@ export async function executeWithStreaming(chatUid, email, command, options = {}
         console.error('Error in onStderr callback:', err.message);
       }
     });
+    proc.stderr.on('error', () => {});
 
     proc.on('close', async (exitCode) => {
       // Check for OOM kill

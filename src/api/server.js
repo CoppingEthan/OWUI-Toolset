@@ -819,15 +819,20 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
 
     // Helper to send SSE chunks with proper flushing
     const sendChunk = (content, finishReason = null) => {
-      const ok = res.write(`data: ${JSON.stringify({
-        id: responseId,
-        object: 'chat.completion.chunk',
-        created,
-        model: modelUsed,
-        choices: [{ index: 0, delta: finishReason ? {} : { content }, finish_reason: finishReason }]
-      })}\n\n`);
-      // If write returns false, the buffer is full (backpressure)
-      return ok;
+      try {
+        const ok = res.write(`data: ${JSON.stringify({
+          id: responseId,
+          object: 'chat.completion.chunk',
+          created,
+          model: modelUsed,
+          choices: [{ index: 0, delta: finishReason ? {} : { content }, finish_reason: finishReason }]
+        })}\n\n`);
+        // If write returns false, the buffer is full (backpressure)
+        return ok;
+      } catch {
+        // Client disconnected mid-stream
+        return false;
+      }
     };
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -876,6 +881,9 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
+
+      // Prevent crash from client disconnect during streaming
+      res.on('error', () => {});
 
       try {
         const response = await chatCompletion({

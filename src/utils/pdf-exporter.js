@@ -28,6 +28,14 @@ export async function exportToPdf(markdown, outputPath, options = {}) {
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    };
+
     markdownpdf({
       paperFormat: 'A4',
       paperOrientation: 'portrait',
@@ -36,10 +44,12 @@ export async function exportToPdf(markdown, outputPath, options = {}) {
       .from.string(fullContent)
       .to(outputPath, (err) => {
         if (err) {
-          reject(err);
-        } else {
+          fail(err);
+        } else if (!settled) {
+          settled = true;
           resolve(outputPath);
         }
-      });
+      })
+      .on('error', fail);
   });
 }

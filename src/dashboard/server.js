@@ -523,6 +523,11 @@ app.get('/api/events', authenticate, (req, res) => {
   // Add client to set
   sseClients.add(res);
 
+  // Prevent crash from client connection errors
+  res.on('error', () => {
+    sseClients.delete(res);
+  });
+
   // Send initial connection message
   res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
 

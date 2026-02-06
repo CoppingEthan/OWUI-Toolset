@@ -458,10 +458,10 @@ install_npm_deps() {
         exit 1
     fi
 
-    # Install build tools needed by npm packages (phantomjs needs bzip2)
-    if ! command -v bzip2 &> /dev/null; then
-        log_info "Installing build dependencies (bzip2)..."
-        $SUDO $PKG_INSTALL bzip2
+    # Install build tools needed by npm packages (phantomjs needs bzip2 + libfontconfig1)
+    if ! command -v bzip2 &> /dev/null || ! ldconfig -p 2>/dev/null | grep -q libfontconfig; then
+        log_info "Installing build dependencies (bzip2, libfontconfig1)..."
+        $SUDO $PKG_INSTALL bzip2 libfontconfig1
     fi
 
     npm install
