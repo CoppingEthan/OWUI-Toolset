@@ -76,6 +76,7 @@ class ContainerManager {
       '--tmpfs', '/var/tmp:size=64m,mode=1777',
       '--tmpfs', '/home/sandbox/.cache:size=64m,mode=0755,uid=1000,gid=1000',
       '--tmpfs', '/home/sandbox/.config:size=16m,mode=0755,uid=1000,gid=1000',
+      '--tmpfs', '/home/sandbox/.local:size=128m,mode=0755,uid=1000,gid=1000',
       '--network', 'sandbox_network',
       '--cap-drop', 'ALL',
       '--security-opt', 'no-new-privileges:true',

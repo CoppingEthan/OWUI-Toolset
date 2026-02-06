@@ -226,17 +226,23 @@ AFTER COMPLETION: Always display the blended image to the user using markdown fo
 
   sandbox_execute: {
     name: 'sandbox_execute',
-    description: `Execute a shell command in a secure sandbox environment.
+    description: `Execute a shell command in a secure sandbox environment. You have full control — install packages, run any code, process any files.
 
-The sandbox provides:
-- Ubuntu 24.04 with Python 3, Node.js 20, common tools
-- 1GB memory limit, 2 CPUs, 5-minute timeout per command
-- Internet access (no LAN access for security)
-- Persistent /workspace directory
+ENVIRONMENT: Ubuntu 24.04, Python 3, Node.js 20, 1GB RAM, 2 CPUs, 5-min timeout, internet access, persistent /workspace.
 
-Pre-installed: numpy, pandas, matplotlib, pillow, requests, beautifulsoup4, openpyxl, PyPDF2, typescript, ffmpeg, imagemagick, pandoc, jq, sqlite3
+SYSTEM TOOLS: ffmpeg, imagemagick, ghostscript, poppler-utils, pandoc, wkhtmltopdf, libreoffice (calc+writer), jq, csvkit, sqlite3, curl, wget, httpie, git, ripgrep, build-essential (gcc/make), zip/unzip/tar/gzip/bzip2/xz/7z.
 
-Use for: running scripts, processing files, installing packages, data analysis, file conversion.
+PYTHON (pre-installed): numpy, pandas, scipy, scikit-learn, matplotlib, seaborn, plotly, altair, bokeh, pillow, opencv-python-headless, openpyxl, xlrd, xlsxwriter, python-docx, PyPDF2, pypdf, pdfplumber, python-pptx, requests, httpx, beautifulsoup4, lxml, selenium, pyyaml, toml, xmltodict, chardet, ftfy, fuzzywuzzy, rapidfuzz, tqdm, rich, tabulate, python-dateutil, pytz, mutagen, ffmpeg-python, py7zr, rarfile.
+
+NODE.JS (global): typescript, esbuild, yarn, pnpm, prettier, marked, svgo.
+
+PERSISTENCE: Only /workspace survives across commands. pip-installed packages and other changes outside /workspace are temporary — if the sandbox resets after inactivity, you may need to reinstall them.
+
+TIPS:
+- PDF conversion: pandoc file.md -o file.pdf --pdf-engine=wkhtmltopdf
+- Spreadsheet conversion: libreoffice --headless --convert-to xlsx file.csv
+- pip install works directly (no flags needed)
+- Use python (not python3) for scripts
 
 IMPORTANT: If process is killed (exit 137), check if it was OOM (memory) or timeout. Adjust code accordingly.`,
     parameters: {

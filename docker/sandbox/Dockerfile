@@ -124,6 +124,9 @@ RUN mkdir -p /workspace && chown sandbox:sandbox /workspace
 RUN mkdir -p /home/sandbox/.local && chown -R sandbox:sandbox /home/sandbox
 ENV PATH="/home/sandbox/.local/bin:${PATH}"
 ENV PIP_USER=1
+# Allow pip install without --break-system-packages flag (PEP 668)
+# Using env var instead of pip.conf because the --tmpfs overlay on .config hides image-layer files
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Set working directory
 WORKDIR /workspace
