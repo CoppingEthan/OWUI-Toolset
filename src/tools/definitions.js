@@ -85,9 +85,9 @@ OUTPUT: Full report content + PDF download link. AFTER completion: provide **[ðŸ
         },
         model: {
           type: 'string',
-          description: 'Research depth: "mini" for quick overview, "pro" for comprehensive analysis',
-          enum: ['mini', 'pro', 'auto'],
-          default: 'auto'
+          description: 'Research depth. Only "mini" is supported.',
+          enum: ['mini'],
+          default: 'mini'
         }
       },
       required: ['query']

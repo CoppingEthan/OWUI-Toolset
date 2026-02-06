@@ -294,7 +294,7 @@ async function executeDeepResearch(params, config, callbacks = {}) {
 
   // Execute the research with streaming
   const researchResult = await tavily.research(apiKey, query, {
-    model: params.model || 'auto',
+    model: 'mini',
     onProgress: (update) => {
       // Forward progress updates
       if (update.type === 'content') {
