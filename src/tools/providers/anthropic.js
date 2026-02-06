@@ -97,8 +97,8 @@ async function convertImagesToAnthropicFormat(messages) {
           continue;
         }
 
-        // HTTP URLs - use URL reference (server.js provides public URLs)
-        if (url.startsWith('http://') || url.startsWith('https://')) {
+        // HTTPS URLs - use URL reference (Anthropic only accepts HTTPS)
+        if (url.startsWith('https://')) {
           convertedContent.push({
             type: 'image',
             source: {
@@ -107,6 +107,28 @@ async function convertImagesToAnthropicFormat(messages) {
             }
           });
           console.log(`📤 [ANTHROPIC] Using URL reference: ${url}`);
+          continue;
+        }
+
+        // HTTP URLs (local/internal) - fetch and send as base64 (Anthropic rejects HTTP)
+        if (url.startsWith('http://')) {
+          try {
+            const resp = await fetch(url);
+            const arrayBuf = await resp.arrayBuffer();
+            const base64 = Buffer.from(arrayBuf).toString('base64');
+            const contentType = resp.headers.get('content-type') || 'image/jpeg';
+            convertedContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: contentType,
+                data: base64
+              }
+            });
+            console.log(`📤 [ANTHROPIC] Fetched HTTP image and converted to base64: ${url}`);
+          } catch (err) {
+            console.error(`❌ [ANTHROPIC] Failed to fetch HTTP image ${url}:`, err.message);
+          }
           continue;
         }
       }
