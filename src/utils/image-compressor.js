@@ -274,10 +274,9 @@ export async function compressForLLM(inputBuffer) {
     };
   }
 
-  // Check if we should compress this type
-  const { shouldCompress } = shouldCompressType(typeInfo.mime);
-
-  if (!shouldCompress) {
+  // For LLM vision, we convert all image types to JPEG (including GIF - LLMs can't see animation)
+  // Only skip SVGs which Sharp can't reliably rasterize without knowing target dimensions
+  if (typeInfo.mime === 'image/svg+xml') {
     const base64 = inputBuffer.toString('base64');
     return {
       buffer: inputBuffer,
