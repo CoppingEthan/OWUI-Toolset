@@ -785,6 +785,21 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       }
     }
 
+    // Inject sandbox file download context so the LLM can provide download links
+    if (enabledToolNames.includes('sandbox_execute') && config.toolset_api_url) {
+      const downloadBase = `${config.toolset_api_url}/${safeEmail}/${safeConvId}/volume`;
+      const sandboxNote = `\n\n[Sandbox file downloads] Files created in /workspace are downloadable. ` +
+        `To give the user a download link, use: ${downloadBase}/<filepath> ` +
+        `(e.g. ${downloadBase}/chart.png). Use markdown links: [Download chart.png](${downloadBase}/chart.png)`;
+
+      const systemMsg = processedMessages.find(m => m.role === 'system');
+      if (systemMsg) {
+        systemMsg.content += sandboxNote;
+      } else {
+        processedMessages.unshift({ role: 'system', content: sandboxNote.trim() });
+      }
+    }
+
     // Native tool calling - no need to inject tool prompts (provider handles this)
 
     // Capture the LAST user message for database storage
