@@ -36,20 +36,23 @@ export async function exportToPdf(markdown, outputPath, options = {}) {
       }
     };
 
-    markdownpdf({
+    // Capture the stream from .from.string() — .to() returns undefined
+    const stream = markdownpdf({
       paperFormat: 'A4',
       paperOrientation: 'portrait',
       paperBorder: '1cm'
-    })
-      .from.string(fullContent)
-      .to(outputPath, (err) => {
-        if (err) {
-          fail(err);
-        } else if (!settled) {
-          settled = true;
-          resolve(outputPath);
-        }
-      })
-      .on('error', fail);
+    }).from.string(fullContent);
+
+    // Catch stream errors before they become unhandled 'error' events
+    stream.on('error', fail);
+
+    stream.to(outputPath, (err) => {
+      if (err) {
+        fail(err);
+      } else if (!settled) {
+        settled = true;
+        resolve(outputPath);
+      }
+    });
   });
 }
