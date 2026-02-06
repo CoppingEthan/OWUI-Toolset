@@ -338,32 +338,39 @@ async function executeDeepResearch(params, config, callbacks = {}) {
       const mdPath = path.join(folderPath, `${baseName}.md`);
       fs.writeFileSync(mdPath, researchResult.report);
 
-      // Generate PDF
-      const pdfPath = path.join(folderPath, `${baseName}.pdf`);
-      await exportToPdf(researchResult.report, pdfPath, {
-        title: 'Deep Research Report',
-        query: query,
-        date: new Date().toISOString()
-      });
+      // Try to generate PDF, fall back to markdown download
+      let reportFile = `${baseName}.md`;
+      try {
+        const pdfPath = path.join(folderPath, `${baseName}.pdf`);
+        await exportToPdf(researchResult.report, pdfPath, {
+          title: 'Deep Research Report',
+          query: query,
+          date: new Date().toISOString()
+        });
+        reportFile = `${baseName}.pdf`;
+        console.log(`📄 Saved research report: ${pdfPath}`);
+      } catch (pdfError) {
+        console.error('PDF generation failed, using markdown fallback:', pdfError.message);
+      }
 
       // Save metadata
       const metaPath = path.join(folderPath, `${baseName}.meta.json`);
       fs.writeFileSync(metaPath, JSON.stringify({
         id: baseName,
-        name: `${baseName}.pdf`,
+        name: reportFile,
         type: 'deep_research_report',
         query: query,
         source_count: researchResult.sources.length,
         timestamp: new Date().toISOString()
       }, null, 2));
 
-      // Build download URL
-      downloadUrl = `${toolsetApiUrl}/${safeEmail}/${safeConvId}/volume/research/${baseName}.pdf`;
+      // Build download URL (PDF if available, otherwise markdown)
+      downloadUrl = `${toolsetApiUrl}/${safeEmail}/${safeConvId}/volume/research/${reportFile}`;
 
-      console.log(`📄 Saved research report: ${pdfPath}`);
-    } catch (pdfError) {
-      console.error('Failed to save PDF:', pdfError.message);
-      // Continue without PDF - don't fail the whole operation
+      console.log(`📎 Report download: ${downloadUrl}`);
+    } catch (saveError) {
+      console.error('Failed to save research report:', saveError.message);
+      // Continue without download - don't fail the whole operation
     }
   }
 
