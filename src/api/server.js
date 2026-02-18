@@ -1456,7 +1456,8 @@ async function compactMessages(processedMessages, config, database, conversation
     const recentStartIndex = convMsgs.length - recentCount;
 
     // Build messages for compaction LLM: include previous summary as context
-    const msgsToProcess = [summaryMsg, ...toSummarize];
+    // Trim to MAX_INPUT_TOKENS so we don't exceed the compaction model's context window
+    const msgsToProcess = trimMessagesToTokenLimit([summaryMsg, ...toSummarize], MAX_INPUT_TOKENS);
     console.log(`🔄 [COMPACTION] Re-compacting: prev summary + ${toSummarize.length} messages, keeping last ${recentCount}`);
 
     const summary = await callCompactionLLM(msgsToProcess, config);
@@ -1476,9 +1477,11 @@ async function compactMessages(processedMessages, config, database, conversation
     const recentMsgs = convMsgs.slice(-recentCount);
     const recentStartIndex = convMsgs.length - recentCount;
 
-    console.log(`✂️ [COMPACTION] First compaction: summarizing ${toSummarize.length} messages, keeping last ${recentCount}`);
+    // Trim to MAX_INPUT_TOKENS so we don't exceed the compaction model's context window
+    const trimmedToSummarize = trimMessagesToTokenLimit(toSummarize, MAX_INPUT_TOKENS);
+    console.log(`✂️ [COMPACTION] First compaction: summarizing ${trimmedToSummarize.length} messages (of ${toSummarize.length}), keeping last ${recentCount}`);
 
-    const summary = await callCompactionLLM(toSummarize, config);
+    const summary = await callCompactionLLM(trimmedToSummarize, config);
     database.upsertSummary(conversationId, summary, recentStartIndex);
 
     const summaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${summary}\n[/CONVERSATION SUMMARY]` };
