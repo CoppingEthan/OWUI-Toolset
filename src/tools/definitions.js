@@ -421,6 +421,54 @@ IMPORTANT: If process is killed (exit 137), check if it was OOM (memory) or time
       },
       required: ['memory_id']
     }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Date & Time Tools
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  date_time_now: {
+    name: 'date_time_now',
+    description: 'Get the current date, time, and timezone. Defaults to Europe/London (UK) but any IANA timezone can be specified. Use this whenever the user asks for the current time, date, or day of the week.',
+    parameters: {
+      type: 'object',
+      properties: {
+        timezone: {
+          type: 'string',
+          description: 'IANA timezone (e.g. "Europe/London", "America/New_York", "Asia/Tokyo"). Defaults to Europe/London.',
+          default: 'Europe/London'
+        }
+      },
+      required: []
+    }
+  },
+
+  date_time_diff: {
+    name: 'date_time_diff',
+    description: `Calculate the exact difference between two dates/times. Returns years, months, days, hours, minutes, and seconds between two points in time.
+
+USE FOR: "how long between X and Y", "how many days until", "exact seconds between two dates", age calculations, countdowns, duration calculations.
+
+INPUT: Dates as ISO 8601 strings (e.g. "2019-04-03", "2023-06-21T14:30:00") or natural formats the tool will parse (e.g. "3rd April 2019", "June 21 2023"). Times default to 00:00:00 if not specified.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Start date/time (e.g. "2019-04-03", "2019-04-03T09:30:00", "March 15 2020")'
+        },
+        to: {
+          type: 'string',
+          description: 'End date/time (e.g. "2023-06-21", "2023-06-21T18:00:00", "December 25 2025")'
+        },
+        timezone: {
+          type: 'string',
+          description: 'IANA timezone for interpreting the dates (default: Europe/London)',
+          default: 'Europe/London'
+        }
+      },
+      required: ['from', 'to']
+    }
   }
 };
 
@@ -610,6 +658,14 @@ export function getEnabledToolNames(config) {
       'memory_create',
       'memory_update',
       'memory_delete'
+    );
+  }
+
+  // Date/time tools - always available when enabled (no external service dependency)
+  if (config.tools.date_time) {
+    enabledTools.push(
+      'date_time_now',
+      'date_time_diff'
     );
   }
 

@@ -905,13 +905,10 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     // Compact long conversations (before hard token trim)
     if (conversation_id && config.enable_compaction) {
       try {
-        if (stream) {
-          sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done: false } });
-        }
-        processedMessages = await compactMessages(processedMessages, config, db, conversation_id);
-        if (stream) {
-          sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done: true } });
-        }
+        const onCompactionStatus = stream
+          ? (done) => sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done } })
+          : null;
+        processedMessages = await compactMessages(processedMessages, config, db, conversation_id, onCompactionStatus);
       } catch (e) {
         console.error('⚠️ [COMPACTION] Failed, falling back to uncompacted messages:', e.message);
         if (stream) {
@@ -1431,7 +1428,7 @@ function trimMessagesToTokenLimit(messages, maxTokens) {
  *
  * Always keeps the last 2 conversation messages (latest user/assistant exchange).
  */
-async function compactMessages(processedMessages, config, database, conversationId) {
+async function compactMessages(processedMessages, config, database, conversationId, onStatus = null) {
   const threshold = COMPACTION_TOKEN_THRESHOLD;
   if (!threshold || threshold <= 0) return processedMessages;
   if (!config.enable_compaction) return processedMessages;
@@ -1471,7 +1468,9 @@ async function compactMessages(processedMessages, config, database, conversation
     const msgsToProcess = trimMessagesToTokenLimit([summaryMsg, ...toSummarize], MAX_INPUT_TOKENS);
     console.log(`🔄 [COMPACTION] Re-compacting: prev summary + ${toSummarize.length} messages, keeping last ${recentCount}`);
 
+    if (onStatus) onStatus(false);
     const summary = await callCompactionLLM(msgsToProcess, config);
+    if (onStatus) onStatus(true);
     database.upsertSummary(conversationId, summary, recentStartIndex);
 
     const newSummaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${summary}\n[/CONVERSATION SUMMARY]` };
@@ -1492,7 +1491,9 @@ async function compactMessages(processedMessages, config, database, conversation
     const trimmedToSummarize = trimMessagesToTokenLimit(toSummarize, MAX_INPUT_TOKENS);
     console.log(`✂️ [COMPACTION] First compaction: summarizing ${trimmedToSummarize.length} messages (of ${toSummarize.length}), keeping last ${recentCount}`);
 
+    if (onStatus) onStatus(false);
     const summary = await callCompactionLLM(trimmedToSummarize, config);
+    if (onStatus) onStatus(true);
     database.upsertSummary(conversationId, summary, recentStartIndex);
 
     const summaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${summary}\n[/CONVERSATION SUMMARY]` };

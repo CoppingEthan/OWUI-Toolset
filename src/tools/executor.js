@@ -96,6 +96,15 @@ async function executeToolCall(toolName, params, config, callbacks = {}) {
         executionResult = await executeMemoryDelete(params, config);
         break;
 
+      // Date/time tools
+      case 'date_time_now':
+        executionResult = executeDateTimeNow(params);
+        break;
+
+      case 'date_time_diff':
+        executionResult = executeDateTimeDiff(params);
+        break;
+
       default:
         executionResult = {
           result: formatToolResult(toolName, `Unknown tool: ${toolName}`, true),
@@ -1171,6 +1180,24 @@ function getToolStatusMessage(toolName, params, phase, result = null) {
         }
       };
 
+    case 'date_time_now':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? `Getting current time (${params.timezone || 'Europe/London'})...` : 'Time retrieved',
+          done: phase !== 'start'
+        }
+      };
+
+    case 'date_time_diff':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? 'Calculating date/time difference...' : 'Difference calculated',
+          done: phase !== 'start'
+        }
+      };
+
     default:
       if (phase === 'start') {
         return {
@@ -1398,6 +1425,215 @@ async function executeMemoryDelete(params, config) {
   return {
     result: formatToolResult('memory_delete',
       `Memory ID ${memoryId} deleted. Character usage: ${remainingChars} / ${MAX_MEMORY_CHARS}`),
+    sources: [],
+    error: null
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Date & Time Tools
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse a date string that may be in various formats.
+ * Supports ISO 8601, and common natural formats like "3rd April 2019", "June 21 2023".
+ * @param {string} dateStr - The date string to parse
+ * @param {string} timezone - IANA timezone for interpretation
+ * @returns {Date|null} Parsed date or null if invalid
+ */
+function parseDateString(dateStr) {
+  if (!dateStr) return null;
+
+  const cleaned = dateStr.trim();
+
+  // Try ISO 8601 directly first
+  const directParse = new Date(cleaned);
+  if (!isNaN(directParse.getTime())) {
+    return directParse;
+  }
+
+  // Strip ordinal suffixes: 3rd -> 3, 21st -> 21, 2nd -> 2, 4th -> 4
+  const withoutOrdinals = cleaned.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
+
+  const retryParse = new Date(withoutOrdinals);
+  if (!isNaN(retryParse.getTime())) {
+    return retryParse;
+  }
+
+  return null;
+}
+
+/**
+ * Get current date/time in a specified timezone
+ * @param {object} params - { timezone?: string }
+ * @returns {{result: string, sources: Array, error?: string}}
+ */
+function executeDateTimeNow(params) {
+  const timezone = params.timezone || 'Europe/London';
+
+  try {
+    const now = new Date();
+
+    const formatted = now.toLocaleString('en-GB', {
+      timeZone: timezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+
+    const isoLocal = now.toLocaleString('sv-SE', { timeZone: timezone }).replace(' ', 'T');
+    const tzAbbr = now.toLocaleString('en-GB', { timeZone: timezone, timeZoneName: 'short' }).split(' ').pop();
+    const tzLong = now.toLocaleString('en-GB', { timeZone: timezone, timeZoneName: 'long' }).split(', ').pop();
+
+    const resultText = [
+      `**Current Date & Time**`,
+      `Date: ${formatted}`,
+      `ISO: ${isoLocal}`,
+      `Timezone: ${timezone} (${tzAbbr})`,
+      `Full timezone name: ${tzLong}`,
+      `Unix timestamp: ${Math.floor(now.getTime() / 1000)}`
+    ].join('\n');
+
+    return {
+      result: formatToolResult('date_time_now', resultText),
+      sources: [],
+      error: null
+    };
+  } catch (error) {
+    const isTimezoneError = error.message.includes('Invalid time zone') || error.message.includes('time zone');
+    const errorMsg = isTimezoneError
+      ? `Invalid timezone "${timezone}". Use IANA format like "Europe/London", "America/New_York", "Asia/Tokyo".`
+      : `Failed to get date/time: ${error.message}`;
+
+    return {
+      result: formatToolResult('date_time_now', errorMsg, true),
+      sources: [],
+      error: errorMsg
+    };
+  }
+}
+
+/**
+ * Calculate the difference between two dates/times
+ * @param {object} params - { from: string, to: string, timezone?: string }
+ * @returns {{result: string, sources: Array, error?: string}}
+ */
+function executeDateTimeDiff(params) {
+  const { from: fromStr, to: toStr } = params;
+  const timezone = params.timezone || 'Europe/London';
+
+  if (!fromStr || !toStr) {
+    return {
+      result: formatToolResult('date_time_diff', 'Both "from" and "to" dates are required', true),
+      sources: [],
+      error: 'Both "from" and "to" dates are required'
+    };
+  }
+
+  const fromDate = parseDateString(fromStr);
+  const toDate = parseDateString(toStr);
+
+  if (!fromDate) {
+    return {
+      result: formatToolResult('date_time_diff', `Could not parse "from" date: "${fromStr}". Use ISO 8601 (e.g. "2019-04-03") or natural format (e.g. "3rd April 2019").`, true),
+      sources: [],
+      error: `Invalid from date: ${fromStr}`
+    };
+  }
+
+  if (!toDate) {
+    return {
+      result: formatToolResult('date_time_diff', `Could not parse "to" date: "${toStr}". Use ISO 8601 (e.g. "2023-06-21") or natural format (e.g. "21st June 2023").`, true),
+      sources: [],
+      error: `Invalid to date: ${toStr}`
+    };
+  }
+
+  // Total difference in milliseconds (preserve sign for direction)
+  const diffMs = toDate.getTime() - fromDate.getTime();
+  const absDiffMs = Math.abs(diffMs);
+  const direction = diffMs >= 0 ? 'after' : 'before';
+
+  // Total units
+  const totalSeconds = Math.floor(absDiffMs / 1000);
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const totalDays = Math.floor(totalHours / 24);
+  const totalWeeks = Math.floor(totalDays / 7);
+
+  // Broken-down difference (years, months, days, hours, minutes, seconds)
+  let startDate, endDate;
+  if (diffMs >= 0) {
+    startDate = fromDate;
+    endDate = toDate;
+  } else {
+    startDate = toDate;
+    endDate = fromDate;
+  }
+
+  let years = endDate.getFullYear() - startDate.getFullYear();
+  let months = endDate.getMonth() - startDate.getMonth();
+  let days = endDate.getDate() - startDate.getDate();
+  let hours = endDate.getHours() - startDate.getHours();
+  let minutes = endDate.getMinutes() - startDate.getMinutes();
+  let seconds = endDate.getSeconds() - startDate.getSeconds();
+
+  // Normalize negative values by borrowing
+  if (seconds < 0) { seconds += 60; minutes--; }
+  if (minutes < 0) { minutes += 60; hours--; }
+  if (hours < 0) { hours += 24; days--; }
+  if (days < 0) {
+    // Days in the previous month of endDate
+    const prevMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 0);
+    days += prevMonth.getDate();
+    months--;
+  }
+  if (months < 0) { months += 12; years--; }
+
+  // Format dates for display
+  const formatOpts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  let fromFormatted, toFormatted;
+  try {
+    fromFormatted = fromDate.toLocaleString('en-GB', { timeZone: timezone, ...formatOpts });
+    toFormatted = toDate.toLocaleString('en-GB', { timeZone: timezone, ...formatOpts });
+  } catch {
+    fromFormatted = fromDate.toLocaleString('en-GB', formatOpts);
+    toFormatted = toDate.toLocaleString('en-GB', formatOpts);
+  }
+
+  // Build human-readable breakdown
+  const parts = [];
+  if (years > 0) parts.push(`${years} year${years !== 1 ? 's' : ''}`);
+  if (months > 0) parts.push(`${months} month${months !== 1 ? 's' : ''}`);
+  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+  if (seconds > 0) parts.push(`${seconds} second${seconds !== 1 ? 's' : ''}`);
+  const breakdown = parts.length > 0 ? parts.join(', ') : '0 seconds (same instant)';
+
+  const resultText = [
+    `**Date/Time Difference**`,
+    `From: ${fromFormatted}`,
+    `To: ${toFormatted}`,
+    `Direction: "to" is ${direction} "from"`,
+    ``,
+    `**Breakdown:** ${breakdown}`,
+    ``,
+    `**Total units:**`,
+    `- ${totalSeconds.toLocaleString()} seconds`,
+    `- ${totalMinutes.toLocaleString()} minutes`,
+    `- ${totalHours.toLocaleString()} hours`,
+    `- ${totalDays.toLocaleString()} days`,
+    `- ${totalWeeks.toLocaleString()} weeks and ${totalDays % 7} day${totalDays % 7 !== 1 ? 's' : ''}`
+  ].join('\n');
+
+  return {
+    result: formatToolResult('date_time_diff', resultText),
     sources: [],
     error: null
   };

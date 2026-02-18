@@ -85,6 +85,9 @@ class Pipe:
         # Tool Toggles - Memory Tools (local, no external service needed)
         ENABLE_MEMORY: bool = Field(default=True, description="Enable user memory (LLM remembers facts about users across conversations)")
 
+        # Tool Toggles - Date/Time Tools (local, no external service needed)
+        ENABLE_DATE_TIME: bool = Field(default=True, description="Enable date/time tools (current time, date differences/calculations)")
+
     def __init__(self):
         self.valves = self.Valves()
         # Disable automatic citations - we emit custom citations via events
@@ -110,7 +113,7 @@ class Pipe:
                 self.valves.ENABLE_IMAGE_BLEND
             )
         )
-        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY
+        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY or self.valves.ENABLE_DATE_TIME
 
     async def pipe(
         self,
@@ -161,6 +164,7 @@ class Pipe:
                     "image_edit": self.valves.ENABLE_IMAGE_EDIT,
                     "image_blend": self.valves.ENABLE_IMAGE_BLEND,
                     "memory": self.valves.ENABLE_MEMORY,
+                    "date_time": self.valves.ENABLE_DATE_TIME,
                 },
             },
         }
@@ -185,7 +189,7 @@ class Pipe:
                     # accumulate text and flush periodically (~50 calls)
                     token_buffer = ""
                     last_flush = time.monotonic()
-                    FLUSH_INTERVAL = 0.2  # Flush every 200ms
+                    FLUSH_INTERVAL = 0.1  # Flush every 100ms
 
                     async def flush_buffer():
                         nonlocal token_buffer, last_flush
