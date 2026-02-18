@@ -43,6 +43,20 @@ class Pipe:
             description="Any model name for the selected provider (e.g. gpt-5.2, claude-haiku-4-5, llama3.1:8b)",
         )
 
+        # Compaction LLM (for summarizing long conversations)
+        COMPACTION_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
+            default="anthropic",
+            description="Provider for conversation compaction (use a fast, cheap model)",
+        )
+        COMPACTION_LLM_MODEL: str = Field(
+            default="claude-haiku-4-5",
+            description="Model for compaction (e.g. claude-haiku-4-5, gpt-5, llama3.1:8b)",
+        )
+        ENABLE_COMPACTION: bool = Field(
+            default=True,
+            description="Enable automatic conversation compaction for long sessions",
+        )
+
         # API Keys
         ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key")
         OPENAI_API_KEY: str = Field(default="", description="OpenAI API key")
@@ -134,6 +148,9 @@ class Pipe:
                 "comfyui_base_url": self.valves.COMFYUI_BASE_URL,
                 "toolset_api_url": self.valves.TOOLSET_API_URL,
                 "custom_system_prompt": self.valves.CUSTOM_SYSTEM_PROMPT,
+                "compaction_provider": self.valves.COMPACTION_LLM_PROVIDER,
+                "compaction_model": self.valves.COMPACTION_LLM_MODEL,
+                "enable_compaction": self.valves.ENABLE_COMPACTION,
                 "tools": {
                     "web_search": self.valves.ENABLE_WEB_SEARCH,
                     "web_scrape": self.valves.ENABLE_WEB_SCRAPE,

@@ -132,6 +132,19 @@ CREATE TABLE IF NOT EXISTS user_memories (
 
 CREATE INDEX IF NOT EXISTS idx_user_memories_user_email ON user_memories(user_email);
 
+-- Conversation summaries for compaction (rolling summaries of long conversations)
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL UNIQUE,
+    summary TEXT NOT NULL,
+    watermark INTEGER NOT NULL,
+    compaction_count INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_conv_id ON conversation_summaries(conversation_id);
+
 -- View for daily statistics by model
 CREATE VIEW IF NOT EXISTS daily_statistics AS
 SELECT

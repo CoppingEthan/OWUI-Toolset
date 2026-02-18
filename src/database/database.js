@@ -892,6 +892,9 @@ class DatabaseManager {
     this.db.run('DELETE FROM request_metrics');
     const metricsDeleted = this.db.getRowsModified();
 
+    // Clear conversation summaries (compaction cache)
+    this.db.run('DELETE FROM conversation_summaries');
+
     // Vacuum to reclaim space
     this.db.run('VACUUM');
 
@@ -1184,6 +1187,54 @@ class DatabaseManager {
       this.saveThrottled();
     }
     return changes > 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Conversation Summaries (compaction)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Get cached summary for a conversation
+   * @param {string} conversationId
+   * @returns {object|null} - { id, conversation_id, summary, watermark, compaction_count, ... }
+   */
+  getSummary(conversationId) {
+    const stmt = this.db.prepare(
+      'SELECT * FROM conversation_summaries WHERE conversation_id = ?'
+    );
+    stmt.bind([conversationId]);
+    const result = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return result;
+  }
+
+  /**
+   * Insert or update a conversation summary
+   * @param {string} conversationId
+   * @param {string} summary - The compacted summary text
+   * @param {number} watermark - Number of conversation messages covered by this summary
+   */
+  upsertSummary(conversationId, summary, watermark) {
+    const existing = this.getSummary(conversationId);
+    if (existing) {
+      const stmt = this.db.prepare(`
+        UPDATE conversation_summaries
+        SET summary = ?, watermark = ?,
+            compaction_count = compaction_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE conversation_id = ?
+      `);
+      stmt.run([summary, watermark, conversationId]);
+      stmt.free();
+    } else {
+      const stmt = this.db.prepare(`
+        INSERT INTO conversation_summaries (conversation_id, summary, watermark)
+        VALUES (?, ?, ?)
+      `);
+      stmt.run([conversationId, summary, watermark]);
+      stmt.free();
+    }
+    this.saveThrottled();
   }
 
   /**

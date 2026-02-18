@@ -892,7 +892,16 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       db: db
     };
 
-    // Enforce input token limit (trim old messages if over budget)
+    // Compact long conversations (before hard token trim)
+    if (conversation_id && config.enable_compaction) {
+      try {
+        processedMessages = await compactMessages(processedMessages, config, db, conversation_id);
+      } catch (e) {
+        console.error('⚠️ [COMPACTION] Failed, falling back to uncompacted messages:', e.message);
+      }
+    }
+
+    // Enforce input token limit (trim old messages if over budget) — safety net
     processedMessages = trimMessagesToTokenLimit(processedMessages, MAX_INPUT_TOKENS);
 
     let detailId = 0;
@@ -1331,6 +1340,12 @@ const MAX_TOOL_ITERATIONS = parseInt(process.env.MAX_TOOL_ITERATIONS || '5', 10)
 const MAX_INPUT_TOKENS = parseInt(process.env.MAX_INPUT_TOKENS || '0', 10);
 
 /**
+ * Token threshold to trigger conversation compaction (0 = disabled)
+ * When estimated input tokens exceed this, older messages are summarized
+ */
+const COMPACTION_TOKEN_THRESHOLD = parseInt(process.env.COMPACTION_TOKEN_THRESHOLD || '0', 10);
+
+/**
  * Estimate token count for a message array (~4 chars per token)
  */
 function estimateTokens(messages) {
@@ -1391,6 +1406,138 @@ function trimMessagesToTokenLimit(messages, maxTokens) {
   }
 
   return [...systemMsgs, ...kept, lastMsg];
+}
+
+/**
+ * Compact long conversations by summarizing old messages with a cheap LLM.
+ * Stores rolling summaries in the database keyed by conversation_id.
+ *
+ * Flow:
+ * 1. No summary exists + under threshold → pass through
+ * 2. No summary exists + over threshold → first compaction
+ * 3. Summary exists + summary + new msgs under threshold → use cached summary
+ * 4. Summary exists + summary + new msgs over threshold → re-compact
+ *
+ * Always keeps the last 2 conversation messages (latest user/assistant exchange).
+ */
+async function compactMessages(processedMessages, config, database, conversationId) {
+  const threshold = COMPACTION_TOKEN_THRESHOLD;
+  if (!threshold || threshold <= 0) return processedMessages;
+  if (!config.enable_compaction) return processedMessages;
+  if (!config.compaction_provider || !config.compaction_model) return processedMessages;
+
+  // Separate system messages from conversation messages
+  const systemMsgs = processedMessages.filter(m => m.role === 'system');
+  const convMsgs = processedMessages.filter(m => m.role !== 'system');
+
+  if (convMsgs.length <= 2) return processedMessages; // Nothing to compact
+
+  // Check for existing summary
+  const existing = database.getSummary(conversationId);
+
+  if (existing && existing.watermark < convMsgs.length) {
+    // We have a previous summary — replace old messages with it
+    const summaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${existing.summary}\n[/CONVERSATION SUMMARY]` };
+    const newMsgsSinceWatermark = convMsgs.slice(existing.watermark);
+
+    // Check if summary + new messages fit under threshold
+    const estimated = estimateTokens([...systemMsgs, summaryMsg, ...newMsgsSinceWatermark]);
+
+    if (estimated <= threshold) {
+      // Fits! Use cached summary + new messages, no re-compaction needed
+      console.log(`📋 [COMPACTION] Using cached summary (watermark=${existing.watermark}) + ${newMsgsSinceWatermark.length} new messages (~${estimated} tokens)`);
+      return [...systemMsgs, summaryMsg, ...newMsgsSinceWatermark];
+    }
+
+    // Over threshold even with summary — need to re-compact
+    const recentCount = 2;
+    const toSummarize = newMsgsSinceWatermark.slice(0, -recentCount);
+    const recentMsgs = newMsgsSinceWatermark.slice(-recentCount);
+    const recentStartIndex = convMsgs.length - recentCount;
+
+    // Build messages for compaction LLM: include previous summary as context
+    const msgsToProcess = [summaryMsg, ...toSummarize];
+    console.log(`🔄 [COMPACTION] Re-compacting: prev summary + ${toSummarize.length} messages, keeping last ${recentCount}`);
+
+    const summary = await callCompactionLLM(msgsToProcess, config);
+    database.upsertSummary(conversationId, summary, recentStartIndex);
+
+    const newSummaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${summary}\n[/CONVERSATION SUMMARY]` };
+    return [...systemMsgs, newSummaryMsg, ...recentMsgs];
+
+  } else if (!existing) {
+    // No existing summary — check if we need one
+    const estimated = estimateTokens(processedMessages);
+    if (estimated <= threshold) return processedMessages; // Under threshold, no compaction needed
+
+    // Over threshold, first compaction
+    const recentCount = 2;
+    const toSummarize = convMsgs.slice(0, -recentCount);
+    const recentMsgs = convMsgs.slice(-recentCount);
+    const recentStartIndex = convMsgs.length - recentCount;
+
+    console.log(`✂️ [COMPACTION] First compaction: summarizing ${toSummarize.length} messages, keeping last ${recentCount}`);
+
+    const summary = await callCompactionLLM(toSummarize, config);
+    database.upsertSummary(conversationId, summary, recentStartIndex);
+
+    const summaryMsg = { role: 'system', content: `[CONVERSATION SUMMARY]\n${summary}\n[/CONVERSATION SUMMARY]` };
+    return [...systemMsgs, summaryMsg, ...recentMsgs];
+  }
+
+  return processedMessages;
+}
+
+/**
+ * Call a cheap/fast LLM to summarize conversation messages.
+ * Uses the compaction_provider and compaction_model from pipeline config.
+ */
+async function callCompactionLLM(messagesToSummarize, config) {
+  // Format the conversation as text for the compaction prompt
+  const conversationText = messagesToSummarize.map(m => {
+    const role = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'System';
+    const content = typeof m.content === 'string' ? m.content
+      : Array.isArray(m.content)
+        ? m.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+        : '';
+    return `${role}: ${content}`;
+  }).join('\n\n');
+
+  const compactionPrompt = [
+    {
+      role: 'system',
+      content: 'You are a conversation summarizer. Create a concise but comprehensive summary of the conversation below. Preserve: key decisions, important facts, user preferences, action items, and any context the assistant would need to continue helping effectively. Do NOT include pleasantries or filler. Output only the summary, nothing else.'
+    },
+    {
+      role: 'user',
+      content: conversationText
+    }
+  ];
+
+  const maxSummaryTokens = parseInt(process.env.COMPACTION_MAX_SUMMARY_TOKENS || '1024', 10);
+  const compactionConfig = {
+    ANTHROPIC_API_KEY: config.anthropic_api_key,
+    OPENAI_API_KEY: config.openai_api_key,
+    OLLAMA_BASE_URL: config.ollama_base_url || 'http://localhost:11434',
+    ANTHROPIC_MAX_TOKENS: maxSummaryTokens,
+  };
+
+  let summaryText = '';
+  const response = await chatCompletion({
+    model: config.compaction_model,
+    provider: config.compaction_provider,
+    messages: compactionPrompt,
+    enabledTools: [],
+    config: compactionConfig,
+    onText: (chunk) => { summaryText += chunk; },
+    stream: false,
+    maxIterations: 1,
+  });
+
+  // Prefer accumulated text from onText, fall back to response.content
+  const finalSummary = summaryText || response.content || 'Unable to generate summary.';
+  console.log(`📝 [COMPACTION] Summary generated: ${finalSummary.length} chars (~${Math.ceil(finalSummary.length / 4)} tokens)`);
+  return finalSummary;
 }
 
 /**
