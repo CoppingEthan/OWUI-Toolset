@@ -55,6 +55,7 @@ function getProviderModule(provider) {
  * Execute chat completion with automatic provider routing
  * @param {object} params
  * @param {string} params.model - Model name
+ * @param {string} [params.provider] - Explicit provider name ('openai', 'anthropic', 'ollama'). If omitted, auto-detected from model name.
  * @param {array} params.messages - Message history
  * @param {array} params.enabledTools - Array of tool names to enable
  * @param {object} params.config - Configuration
@@ -68,6 +69,7 @@ function getProviderModule(provider) {
  */
 export async function chatCompletion({
   model,
+  provider: explicitProvider,
   messages,
   enabledTools = [],
   config,
@@ -79,7 +81,7 @@ export async function chatCompletion({
   maxIterations = 5,
   strictMode = false
 }) {
-  const provider = detectProvider(model, config);
+  const provider = explicitProvider || detectProvider(model, config);
   const providerModule = getProviderModule(provider);
 
   const params = {

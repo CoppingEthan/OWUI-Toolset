@@ -20,7 +20,8 @@
       "Bash(npm start)",
       "Bash(timeout:*)",
       "Bash(ping:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(du:*)"
     ]
   }
 }

@@ -67,6 +67,9 @@ class Pipe:
         ENABLE_IMAGE_EDIT: bool = Field(default=True, description="Enable AI image editing")
         ENABLE_IMAGE_BLEND: bool = Field(default=True, description="Enable AI image blending")
 
+        # Tool Toggles - Memory Tools (local, no external service needed)
+        ENABLE_MEMORY: bool = Field(default=True, description="Enable user memory (LLM remembers facts about users across conversations)")
+
     def __init__(self):
         self.valves = self.Valves()
         # Disable automatic citations - we emit custom citations via events
@@ -92,7 +95,7 @@ class Pipe:
                 self.valves.ENABLE_IMAGE_BLEND
             )
         )
-        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX
+        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY
 
     async def pipe(
         self,
@@ -139,6 +142,7 @@ class Pipe:
                     "image_generation": self.valves.ENABLE_IMAGE_GENERATION,
                     "image_edit": self.valves.ENABLE_IMAGE_EDIT,
                     "image_blend": self.valves.ENABLE_IMAGE_BLEND,
+                    "memory": self.valves.ENABLE_MEMORY,
                 },
             },
         }

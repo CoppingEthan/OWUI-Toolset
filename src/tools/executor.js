@@ -79,6 +79,23 @@ async function executeToolCall(toolName, params, config, callbacks = {}) {
         executionResult = await sandbox.getStats(params, config);
         break;
 
+      // User memory tools
+      case 'memory_retrieve':
+        executionResult = await executeMemoryRetrieve(params, config);
+        break;
+
+      case 'memory_create':
+        executionResult = await executeMemoryCreate(params, config);
+        break;
+
+      case 'memory_update':
+        executionResult = await executeMemoryUpdate(params, config);
+        break;
+
+      case 'memory_delete':
+        executionResult = await executeMemoryDelete(params, config);
+        break;
+
       default:
         executionResult = {
           result: formatToolResult(toolName, `Unknown tool: ${toolName}`, true),
@@ -1118,6 +1135,42 @@ function getToolStatusMessage(toolName, params, phase, result = null) {
         };
       }
 
+    case 'memory_retrieve':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? 'Retrieving memories...' : 'Memories retrieved',
+          done: phase !== 'start'
+        }
+      };
+
+    case 'memory_create':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? 'Saving memory...' : 'Memory saved',
+          done: phase !== 'start'
+        }
+      };
+
+    case 'memory_update':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? 'Updating memory...' : 'Memory updated',
+          done: phase !== 'start'
+        }
+      };
+
+    case 'memory_delete':
+      return {
+        type: 'status',
+        data: {
+          description: phase === 'start' ? 'Deleting memory...' : 'Memory deleted',
+          done: phase !== 'start'
+        }
+      };
+
     default:
       if (phase === 'start') {
         return {
@@ -1137,6 +1190,217 @@ function getToolStatusMessage(toolName, params, phase, result = null) {
         };
       }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// User Memory Tools
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_MEMORY_CHARS = parseInt(process.env.MAX_MEMORY_CHARS || '2000', 10);
+
+async function executeMemoryRetrieve(params, config) {
+  const userEmail = config.USER_EMAIL;
+  const db = config.db;
+
+  if (!userEmail || !db) {
+    return {
+      result: formatToolResult('memory_retrieve', 'User context not available', true),
+      sources: [],
+      error: 'User context not available'
+    };
+  }
+
+  const memories = db.getMemories(userEmail);
+  const totalChars = db.getMemoryCharCount(userEmail);
+
+  if (memories.length === 0) {
+    return {
+      result: formatToolResult('memory_retrieve',
+        `No memories stored for this user.\nCharacter usage: 0 / ${MAX_MEMORY_CHARS}`),
+      sources: [],
+      error: null
+    };
+  }
+
+  const formatted = memories.map(m =>
+    `[ID: ${m.id}] ${m.content} (created: ${m.created_at}, updated: ${m.updated_at})`
+  ).join('\n');
+
+  return {
+    result: formatToolResult('memory_retrieve',
+      `Found ${memories.length} memories (${totalChars} / ${MAX_MEMORY_CHARS} chars used):\n\n${formatted}`),
+    sources: [],
+    error: null
+  };
+}
+
+async function executeMemoryCreate(params, config) {
+  const userEmail = config.USER_EMAIL;
+  const db = config.db;
+  const content = params.content;
+
+  if (!userEmail || !db) {
+    return {
+      result: formatToolResult('memory_create', 'User context not available', true),
+      sources: [],
+      error: 'User context not available'
+    };
+  }
+
+  if (!content || content.trim().length === 0) {
+    return {
+      result: formatToolResult('memory_create', 'Memory content cannot be empty', true),
+      sources: [],
+      error: 'Memory content cannot be empty'
+    };
+  }
+
+  const trimmedContent = content.trim();
+  const currentChars = db.getMemoryCharCount(userEmail);
+  const newTotal = currentChars + trimmedContent.length;
+
+  if (newTotal > MAX_MEMORY_CHARS) {
+    const remaining = MAX_MEMORY_CHARS - currentChars;
+    return {
+      result: formatToolResult('memory_create',
+        `Cannot create memory: would exceed character limit. ` +
+        `Current usage: ${currentChars} / ${MAX_MEMORY_CHARS} chars. ` +
+        `New memory is ${trimmedContent.length} chars, but only ${remaining} chars remaining. ` +
+        `Please consolidate or delete existing memories first using memory_update or memory_delete.`,
+        true),
+      sources: [],
+      error: 'Character limit exceeded'
+    };
+  }
+
+  const memoryId = db.createMemory(userEmail, trimmedContent);
+
+  return {
+    result: formatToolResult('memory_create',
+      `Memory created successfully (ID: ${memoryId}). Character usage: ${newTotal} / ${MAX_MEMORY_CHARS}`),
+    sources: [],
+    error: null
+  };
+}
+
+async function executeMemoryUpdate(params, config) {
+  const userEmail = config.USER_EMAIL;
+  const db = config.db;
+  const memoryId = params.memory_id;
+  const content = params.content;
+
+  if (!userEmail || !db) {
+    return {
+      result: formatToolResult('memory_update', 'User context not available', true),
+      sources: [],
+      error: 'User context not available'
+    };
+  }
+
+  if (!memoryId) {
+    return {
+      result: formatToolResult('memory_update', 'memory_id is required', true),
+      sources: [],
+      error: 'memory_id is required'
+    };
+  }
+
+  if (!content || content.trim().length === 0) {
+    return {
+      result: formatToolResult('memory_update', 'Memory content cannot be empty', true),
+      sources: [],
+      error: 'Memory content cannot be empty'
+    };
+  }
+
+  const trimmedContent = content.trim();
+
+  const existing = db.getMemoryById(memoryId, userEmail);
+  if (!existing) {
+    return {
+      result: formatToolResult('memory_update',
+        `Memory with ID ${memoryId} not found or does not belong to this user.`, true),
+      sources: [],
+      error: 'Memory not found'
+    };
+  }
+
+  const currentChars = db.getMemoryCharCount(userEmail);
+  const sizeDelta = trimmedContent.length - existing.content.length;
+  const newTotal = currentChars + sizeDelta;
+
+  if (newTotal > MAX_MEMORY_CHARS) {
+    const maxForUpdate = MAX_MEMORY_CHARS - currentChars + existing.content.length;
+    return {
+      result: formatToolResult('memory_update',
+        `Cannot update memory: would exceed character limit. ` +
+        `Current usage: ${currentChars} / ${MAX_MEMORY_CHARS} chars. ` +
+        `New content is ${trimmedContent.length} chars (was ${existing.content.length}). ` +
+        `Maximum for this update: ${maxForUpdate} chars.`,
+        true),
+      sources: [],
+      error: 'Character limit exceeded'
+    };
+  }
+
+  const updated = db.updateMemory(memoryId, userEmail, trimmedContent);
+
+  if (!updated) {
+    return {
+      result: formatToolResult('memory_update', `Failed to update memory ID ${memoryId}.`, true),
+      sources: [],
+      error: 'Update failed'
+    };
+  }
+
+  return {
+    result: formatToolResult('memory_update',
+      `Memory ID ${memoryId} updated successfully. Character usage: ${newTotal} / ${MAX_MEMORY_CHARS}`),
+    sources: [],
+    error: null
+  };
+}
+
+async function executeMemoryDelete(params, config) {
+  const userEmail = config.USER_EMAIL;
+  const db = config.db;
+  const memoryId = params.memory_id;
+
+  if (!userEmail || !db) {
+    return {
+      result: formatToolResult('memory_delete', 'User context not available', true),
+      sources: [],
+      error: 'User context not available'
+    };
+  }
+
+  if (!memoryId) {
+    return {
+      result: formatToolResult('memory_delete', 'memory_id is required', true),
+      sources: [],
+      error: 'memory_id is required'
+    };
+  }
+
+  const deleted = db.deleteMemory(memoryId, userEmail);
+
+  if (!deleted) {
+    return {
+      result: formatToolResult('memory_delete',
+        `Memory with ID ${memoryId} not found or does not belong to this user.`, true),
+      sources: [],
+      error: 'Memory not found'
+    };
+  }
+
+  const remainingChars = db.getMemoryCharCount(userEmail);
+
+  return {
+    result: formatToolResult('memory_delete',
+      `Memory ID ${memoryId} deleted. Character usage: ${remainingChars} / ${MAX_MEMORY_CHARS}`),
+    sources: [],
+    error: null
+  };
 }
 
 export {

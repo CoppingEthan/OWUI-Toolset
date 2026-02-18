@@ -358,6 +358,69 @@ IMPORTANT: If process is killed (exit 137), check if it was OOM (memory) or time
       properties: {},
       required: []
     }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // User Memory Tools
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  memory_retrieve: {
+    name: 'memory_retrieve',
+    description: 'Retrieve all saved memories for the current user. Use this to check what you already know about the user before saving new memories. Returns all stored memories with their IDs, content, and timestamps.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+
+  memory_create: {
+    name: 'memory_create',
+    description: 'Save a new memory about the current user. Use this to remember important user preferences, facts, or context across conversations. Keep memories concise and factual (e.g., "Prefers Python over JavaScript", "Works at Acme Corp as a backend engineer"). Avoid duplicating existing memories - use memory_retrieve first to check. If near the character limit, use memory_update to consolidate or memory_delete to remove outdated entries.',
+    parameters: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The memory content to save (concise factual statement about the user)'
+        }
+      },
+      required: ['content']
+    }
+  },
+
+  memory_update: {
+    name: 'memory_update',
+    description: 'Update an existing memory by its ID. Use this to correct, consolidate, or refine stored memories. Retrieve memories first to get the ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        memory_id: {
+          type: 'integer',
+          description: 'The ID of the memory to update (from memory_retrieve results)'
+        },
+        content: {
+          type: 'string',
+          description: 'The updated memory content'
+        }
+      },
+      required: ['memory_id', 'content']
+    }
+  },
+
+  memory_delete: {
+    name: 'memory_delete',
+    description: 'Delete a memory by its ID. Use this to remove outdated or incorrect memories. Retrieve memories first to get the ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        memory_id: {
+          type: 'integer',
+          description: 'The ID of the memory to delete (from memory_retrieve results)'
+        }
+      },
+      required: ['memory_id']
+    }
   }
 };
 
@@ -537,6 +600,16 @@ export function getEnabledToolNames(config) {
       'sandbox_list_files',
       'sandbox_diff_edit',
       'sandbox_stats'
+    );
+  }
+
+  // Memory tools - always available when enabled (no external service dependency)
+  if (config.tools.memory) {
+    enabledTools.push(
+      'memory_retrieve',
+      'memory_create',
+      'memory_update',
+      'memory_delete'
     );
   }
 

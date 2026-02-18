@@ -121,6 +121,17 @@ CREATE INDEX IF NOT EXISTS idx_request_messages_request_id ON request_messages(r
 CREATE INDEX IF NOT EXISTS idx_tool_calls_request_id ON tool_calls(request_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name ON tool_calls(tool_name);
 
+-- User memories table (per-user persistent memories across conversations)
+CREATE TABLE IF NOT EXISTS user_memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_memories_user_email ON user_memories(user_email);
+
 -- View for daily statistics by model
 CREATE VIEW IF NOT EXISTS daily_statistics AS
 SELECT

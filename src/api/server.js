@@ -785,6 +785,26 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       }
     }
 
+    // Inject user memories into system prompt if memory tools are enabled
+    if (config.tools?.memory && user_email) {
+      try {
+        const memories = db.getMemories(user_email);
+        if (memories.length > 0) {
+          const memoryBlock = memories.map(m => `- ${m.content}`).join('\n');
+          const memoryNote = `\n\n[USER_MEMORIES]\nThings you remember about this user:\n${memoryBlock}\n[/USER_MEMORIES]`;
+
+          const systemMsg = processedMessages.find(m => m.role === 'system');
+          if (systemMsg) {
+            systemMsg.content += memoryNote;
+          } else {
+            processedMessages.unshift({ role: 'system', content: memoryNote.trim() });
+          }
+        }
+      } catch (e) {
+        console.error('Failed to inject user memories:', e.message);
+      }
+    }
+
     // Inject sandbox file download context so the LLM can provide download links
     if (enabledToolNames.includes('sandbox_execute') && config.toolset_api_url) {
       const downloadBase = `${config.toolset_api_url}/${safeEmail}/${safeConvId}/volume`;
@@ -867,8 +887,13 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       // Public domain for image URL references (used by providers to determine URL vs base64)
       PUBLIC_DOMAIN: publicDomain,
       // Tool toggles
-      tools: config.tools
+      tools: config.tools,
+      // Database instance for memory tools
+      db: db
     };
+
+    // Enforce input token limit (trim old messages if over budget)
+    processedMessages = trimMessagesToTokenLimit(processedMessages, MAX_INPUT_TOKENS);
 
     let detailId = 0;
 
@@ -888,6 +913,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       try {
         const response = await chatCompletion({
           model,
+          provider: llmProvider,
           messages: processedMessages,
           enabledTools: enabledToolNames,
           config: toolConfig,
@@ -1009,6 +1035,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       try {
         const response = await chatCompletion({
           model,
+          provider: llmProvider,
           messages: processedMessages,
           enabledTools: enabledToolNames,
           config: toolConfig,
@@ -1296,6 +1323,75 @@ function sendSSEEvent(res, eventType, data) {
  * Maximum tool iterations to prevent infinite loops
  */
 const MAX_TOOL_ITERATIONS = parseInt(process.env.MAX_TOOL_ITERATIONS || '5', 10);
+
+/**
+ * Maximum input tokens allowed per request (0 = unlimited)
+ * Uses ~4 chars per token approximation to avoid needing a tokenizer
+ */
+const MAX_INPUT_TOKENS = parseInt(process.env.MAX_INPUT_TOKENS || '0', 10);
+
+/**
+ * Estimate token count for a message array (~4 chars per token)
+ */
+function estimateTokens(messages) {
+  let chars = 0;
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      chars += msg.content.length;
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.type === 'text' && block.text) chars += block.text.length;
+      }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Trim messages to fit within token budget.
+ * Keeps: system messages (always), last user message (always).
+ * Removes: oldest non-system messages first.
+ */
+function trimMessagesToTokenLimit(messages, maxTokens) {
+  if (!maxTokens || maxTokens <= 0) return messages;
+
+  const estimated = estimateTokens(messages);
+  if (estimated <= maxTokens) return messages;
+
+  // Separate system messages (always kept) from conversation messages
+  const systemMsgs = messages.filter(m => m.role === 'system');
+  const convMsgs = messages.filter(m => m.role !== 'system');
+
+  if (convMsgs.length === 0) return messages;
+
+  // Always keep the last message (current user turn)
+  const lastMsg = convMsgs[convMsgs.length - 1];
+  let trimmed = convMsgs.slice(0, -1);
+
+  // Calculate budget: total max minus system messages minus last message
+  const systemTokens = estimateTokens(systemMsgs);
+  const lastMsgTokens = estimateTokens([lastMsg]);
+  let budget = maxTokens - systemTokens - lastMsgTokens;
+
+  // Keep as many recent messages as fit within budget (from newest to oldest)
+  const kept = [];
+  for (let i = trimmed.length - 1; i >= 0 && budget > 0; i--) {
+    const msgTokens = estimateTokens([trimmed[i]]);
+    if (msgTokens <= budget) {
+      kept.unshift(trimmed[i]);
+      budget -= msgTokens;
+    } else {
+      break; // Stop at first message that doesn't fit to keep contiguous history
+    }
+  }
+
+  const removed = trimmed.length - kept.length;
+  if (removed > 0) {
+    console.log(`✂️ [TOKEN LIMIT] Trimmed ${removed} older messages (estimated ${estimated} → ~${maxTokens} tokens)`);
+  }
+
+  return [...systemMsgs, ...kept, lastMsg];
+}
 
 /**
  * Serve files from user volumes

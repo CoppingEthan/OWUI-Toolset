@@ -7,6 +7,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import DatabaseManager from '../database/database.js';
 import dotenv from 'dotenv';
 
@@ -156,12 +157,13 @@ app.get('/api/requests/:id/tools', authenticate, (req, res) => {
   }
 });
 
-// Get statistics for a time range
+// Get statistics for a time range (with optional domain filter)
 app.get('/api/stats/:timeRange', authenticate, (req, res) => {
   try {
     db.reload(); // Reload from disk to get latest data
     const { timeRange } = req.params;
-    const stats = db.getStatistics(timeRange);
+    const domain = req.query.domain || null;
+    const stats = db.getStatistics(timeRange, domain);
     res.json(stats);
   } catch (error) {
     console.error('Error fetching statistics:', error);
@@ -221,11 +223,12 @@ app.get('/api/stats/by-model', authenticate, (req, res) => {
   }
 });
 
-// Get tool usage statistics
+// Get tool usage statistics (with optional domain filter)
 app.get('/api/stats/tools', authenticate, (req, res) => {
   try {
     db.reload(); // Reload from disk to get latest data
-    const data = db.getToolUsageStatistics();
+    const domain = req.query.domain || null;
+    const data = db.getToolUsageStatistics(domain);
     res.json(data);
   } catch (error) {
     console.error('Error fetching tool usage:', error);
@@ -233,11 +236,12 @@ app.get('/api/stats/tools', authenticate, (req, res) => {
   }
 });
 
-// Get total tool call count
+// Get total tool call count (with optional domain filter)
 app.get('/api/stats/tool-count', authenticate, (req, res) => {
   try {
     db.reload();
-    const count = db.getTotalToolCalls();
+    const domain = req.query.domain || null;
+    const count = db.getTotalToolCalls(domain);
     res.json({ count });
   } catch (error) {
     console.error('Error fetching tool count:', error);
@@ -511,6 +515,80 @@ app.delete('/api/settings/costs/:pattern', authenticate, (req, res) => {
     console.error('Error deleting cost:', error);
     res.status(500).json({ error: 'Failed to delete cost' });
   }
+});
+
+// Version check - compare local version with GitHub
+let versionCache = { data: null, fetchedAt: 0 };
+const VERSION_CACHE_MS = 60 * 60 * 1000; // 1 hour
+
+app.get('/api/version', authenticate, async (req, res) => {
+  try {
+    const localPkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+    const current = localPkg.version;
+    const upgradeAllowed = (process.env.ALLOW_REMOTE_UPGRADE || '').toLowerCase() === 'true';
+
+    let latest = current;
+    let updateAvailable = false;
+
+    // Check GitHub (cached for 1 hour)
+    const now = Date.now();
+    if (versionCache.data && (now - versionCache.fetchedAt) < VERSION_CACHE_MS) {
+      latest = versionCache.data;
+    } else {
+      try {
+        const resp = await fetch('https://raw.githubusercontent.com/CoppingEthan/OWUI-Toolset/main/package.json');
+        if (resp.ok) {
+          const remotePkg = await resp.json();
+          latest = remotePkg.version;
+          versionCache = { data: latest, fetchedAt: now };
+        }
+      } catch (e) {
+        console.error('Version check failed:', e.message);
+      }
+    }
+
+    // Simple semver comparison (split on dots, compare numerically)
+    const cmp = (a, b) => {
+      const pa = a.split('.').map(Number);
+      const pb = b.split('.').map(Number);
+      for (let i = 0; i < 3; i++) {
+        if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+        if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+      }
+      return 0;
+    };
+    updateAvailable = cmp(current, latest) < 0;
+
+    res.json({ current, latest, updateAvailable, upgradeAllowed });
+  } catch (error) {
+    console.error('Error checking version:', error);
+    res.status(500).json({ error: 'Failed to check version' });
+  }
+});
+
+// Trigger upgrade via deploy.sh
+app.post('/api/upgrade', authenticate, (req, res) => {
+  const upgradeAllowed = (process.env.ALLOW_REMOTE_UPGRADE || '').toLowerCase() === 'true';
+  if (!upgradeAllowed) {
+    return res.status(403).json({ error: 'Remote upgrade is disabled. Set ALLOW_REMOTE_UPGRADE=true in .env to enable.' });
+  }
+
+  const deployScript = path.join(projectRoot, 'deploy.sh');
+  if (!fs.existsSync(deployScript)) {
+    return res.status(404).json({ error: 'deploy.sh not found in project root' });
+  }
+
+  console.log('🚀 Upgrade initiated from dashboard');
+
+  // Spawn deploy.sh as detached process - it will stop/restart this process
+  const child = spawn('bash', [deployScript], {
+    cwd: projectRoot,
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
+
+  res.json({ success: true, message: 'Upgrade started. The server will restart shortly.' });
 });
 
 // Server-Sent Events endpoint for real-time updates

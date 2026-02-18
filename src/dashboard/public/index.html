@@ -365,6 +365,88 @@
             height: 16px;
         }
 
+        /* Version Badge */
+        .version-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            cursor: default;
+            transition: all 0.3s ease;
+        }
+
+        .version-badge.update-available {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+            cursor: pointer;
+        }
+
+        .version-badge.update-available:hover {
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .version-badge .update-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-purple);
+            animation: pulse 2s infinite;
+        }
+
+        /* Upgrade Section in Settings */
+        .upgrade-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: rgba(139, 92, 246, 0.08);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .upgrade-section .upgrade-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .upgrade-section .upgrade-info strong {
+            color: var(--accent-purple);
+        }
+
+        .upgrade-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            background: var(--accent-purple);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .upgrade-btn:hover {
+            filter: brightness(1.15);
+        }
+
+        .upgrade-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .upgrade-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
         /* Chart Container */
         .chart-container {
             background: rgba(255, 255, 255, 0.03);
@@ -1083,6 +1165,7 @@
                     </select>
                 </div>
                 <div class="header-right">
+                    <span class="version-badge" id="versionBadge" title="Version info" style="display: none;"></span>
                     <div class="live-indicator connected" id="liveIndicator">
                         <span class="live-dot"></span>
                         <span id="liveText">Live</span>
@@ -1195,6 +1278,15 @@
     <div class="modal-overlay" id="settingsModal">
         <div class="modal" style="max-width: 600px;">
             <h2>Settings</h2>
+
+            <div class="modal-section" id="upgradeSection" style="display: none;">
+                <h3>Software Update</h3>
+                <div class="upgrade-section">
+                    <div class="upgrade-info" id="upgradeInfo"></div>
+                    <button class="upgrade-btn" id="upgradeBtn" onclick="triggerUpgrade()">Upgrade Now</button>
+                </div>
+                <p class="upgrade-note" id="upgradeNote"></p>
+            </div>
 
             <div class="modal-section">
                 <h3>Model Costs (per 1M tokens in USD)</h3>
@@ -1423,6 +1515,74 @@
             updateSyncTimerDisplay();
         }
 
+        // Version check
+        let versionData = null;
+
+        async function checkVersion() {
+            try {
+                const res = await fetch('/api/version');
+                versionData = await res.json();
+                const badge = document.getElementById('versionBadge');
+                badge.style.display = 'inline-flex';
+
+                if (versionData.updateAvailable) {
+                    badge.className = 'version-badge update-available';
+                    badge.innerHTML = `<span class="update-dot"></span> v${versionData.current} &rarr; v${versionData.latest}`;
+                    badge.title = 'Update available - click to open settings';
+                    badge.onclick = openSettings;
+                } else {
+                    badge.className = 'version-badge';
+                    badge.innerHTML = `v${versionData.current}`;
+                    badge.title = 'Up to date';
+                }
+
+                // Update settings modal upgrade section
+                updateUpgradeSection();
+            } catch (e) {
+                console.error('Version check failed:', e);
+            }
+        }
+
+        function updateUpgradeSection() {
+            const section = document.getElementById('upgradeSection');
+            const info = document.getElementById('upgradeInfo');
+            const btn = document.getElementById('upgradeBtn');
+            const note = document.getElementById('upgradeNote');
+
+            if (!versionData) return;
+
+            if (versionData.updateAvailable) {
+                section.style.display = 'block';
+                info.innerHTML = `v<strong>${versionData.current}</strong> &rarr; v<strong>${versionData.latest}</strong> available`;
+
+                if (versionData.upgradeAllowed) {
+                    btn.style.display = 'inline-block';
+                    btn.disabled = false;
+                    note.textContent = 'This will pull the latest code, install dependencies, and restart the server. Data is preserved.';
+                } else {
+                    btn.style.display = 'none';
+                    note.textContent = 'Remote upgrade is disabled. Run ./deploy.sh on the server to upgrade, or set ALLOW_REMOTE_UPGRADE=true in .env.';
+                }
+            } else {
+                section.style.display = 'none';
+            }
+        }
+
+        async function triggerUpgrade() {
+            const btn = document.getElementById('upgradeBtn');
+            if (!confirm('This will upgrade the server and restart it. Continue?')) return;
+
+            btn.disabled = true;
+            btn.textContent = 'Upgrading...';
+            document.getElementById('upgradeNote').textContent = 'Upgrade in progress. The server will restart shortly — this page will reconnect automatically.';
+
+            try {
+                await fetch('/api/upgrade', { method: 'POST' });
+            } catch (e) {
+                // Expected — server restarts during upgrade
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             setupTimeRangeButtons();
@@ -1433,6 +1593,7 @@
             loadDomains();
             loadData();
             startSyncTimer();
+            checkVersion();
         });
 
         function setupTimeRangeButtons() {
@@ -1570,7 +1731,8 @@
 
         // Load statistics
         async function loadStatistics() {
-            const res = await fetch(`/api/stats/${currentTimeRange}`);
+            const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
+            const res = await fetch(`/api/stats/${currentTimeRange}${domainParam}`);
             const stats = await res.json();
 
             document.getElementById('stat-requests').textContent = formatNumber(stats.total_requests || 0);
@@ -1585,9 +1747,10 @@
 
         // Load tool count
         async function loadToolCount() {
+            const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
             const [countRes, statsRes] = await Promise.all([
-                fetch('/api/stats/tool-count'),
-                fetch('/api/stats/tools')
+                fetch(`/api/stats/tool-count${domainParam}`),
+                fetch(`/api/stats/tools${domainParam}`)
             ]);
             const { count } = await countRes.json();
             const toolStats = await statsRes.json();

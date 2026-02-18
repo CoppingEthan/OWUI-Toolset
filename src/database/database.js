@@ -368,31 +368,36 @@ class DatabaseManager {
   /**
    * Get statistics for a time range
    * @param {string} timeRange - '1h', '24h', '7d', '30d', '1y'
+   * @param {string} [domain] - Optional email domain filter
    */
-  getStatistics(timeRange) {
-    let whereClause = '';
+  getStatistics(timeRange, domain) {
+    const whereClauses = ["status = 'completed'"];
+    const params = [];
 
     switch (timeRange) {
       case '1h':
-        whereClause = "WHERE timestamp >= datetime('now', '-1 hour')";
+        whereClauses.push("timestamp >= datetime('now', '-1 hour')");
         break;
       case '24h':
-        whereClause = "WHERE timestamp >= datetime('now', '-24 hours')";
+        whereClauses.push("timestamp >= datetime('now', '-24 hours')");
         break;
       case '7d':
-        whereClause = "WHERE timestamp >= datetime('now', '-7 days')";
+        whereClauses.push("timestamp >= datetime('now', '-7 days')");
         break;
       case '30d':
-        whereClause = "WHERE timestamp >= datetime('now', '-30 days')";
+        whereClauses.push("timestamp >= datetime('now', '-30 days')");
         break;
       case '1y':
-        whereClause = "WHERE timestamp >= datetime('now', '-1 year')";
+        whereClauses.push("timestamp >= datetime('now', '-1 year')");
         break;
-      default:
-        whereClause = '';
     }
 
-    const statusFilter = whereClause ? `${whereClause} AND status = 'completed'` : "WHERE status = 'completed'";
+    if (domain) {
+      whereClauses.push("user_email LIKE '%@' || ?");
+      params.push(domain);
+    }
+
+    const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
 
     const stmt = this.db.prepare(`
       SELECT
@@ -404,9 +409,10 @@ class DatabaseManager {
         SUM(cost) as total_cost,
         AVG(response_time_ms) as avg_response_time
       FROM request_metrics
-      ${statusFilter}
+      ${whereSQL}
     `);
 
+    if (params.length > 0) stmt.bind(params);
     stmt.step();
     const result = stmt.getAsObject();
     stmt.free();
@@ -525,8 +531,19 @@ class DatabaseManager {
 
   /**
    * Get tool usage statistics from tool_calls table
+   * @param {string} [domain] - Optional email domain filter
    */
-  getToolUsageStatistics() {
+  getToolUsageStatistics(domain) {
+    const params = [];
+    let domainJoin = '';
+    let domainFilter = '';
+
+    if (domain) {
+      domainJoin = 'JOIN request_metrics rm ON tool_calls.request_id = rm.id';
+      domainFilter = "AND rm.user_email LIKE '%@' || ?";
+      params.push(domain);
+    }
+
     const stmt = this.db.prepare(`
       SELECT
         tool_name as tool,
@@ -535,10 +552,13 @@ class DatabaseManager {
         SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as error_count,
         AVG(execution_time_ms) as avg_execution_time
       FROM tool_calls
+      ${domainJoin}
+      WHERE 1=1 ${domainFilter}
       GROUP BY tool_name
       ORDER BY count DESC
     `);
 
+    if (params.length > 0) stmt.bind(params);
     const rows = [];
     while (stmt.step()) {
       rows.push(stmt.getAsObject());
@@ -550,9 +570,26 @@ class DatabaseManager {
 
   /**
    * Get total tool call count
+   * @param {string} [domain] - Optional email domain filter
    */
-  getTotalToolCalls() {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM tool_calls');
+  getTotalToolCalls(domain) {
+    const params = [];
+    let domainJoin = '';
+    let domainFilter = '';
+
+    if (domain) {
+      domainJoin = 'JOIN request_metrics rm ON tool_calls.request_id = rm.id';
+      domainFilter = "AND rm.user_email LIKE '%@' || ?";
+      params.push(domain);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM tool_calls
+      ${domainJoin}
+      WHERE 1=1 ${domainFilter}
+    `);
+
+    if (params.length > 0) stmt.bind(params);
     stmt.step();
     const count = stmt.getAsObject().count;
     stmt.free();
@@ -1014,6 +1051,139 @@ class DatabaseManager {
     }
     stmt.free();
     return rows;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // USER MEMORY METHODS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get all memories for a user
+   * @param {string} userEmail
+   * @returns {Array<{id: number, content: string, created_at: string, updated_at: string}>}
+   */
+  getMemories(userEmail) {
+    const stmt = this.db.prepare(`
+      SELECT id, content, created_at, updated_at
+      FROM user_memories
+      WHERE user_email = ?
+      ORDER BY created_at ASC
+    `);
+    stmt.bind([userEmail]);
+
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Get total character count of all memories for a user
+   * @param {string} userEmail
+   * @returns {number}
+   */
+  getMemoryCharCount(userEmail) {
+    const stmt = this.db.prepare(`
+      SELECT COALESCE(SUM(LENGTH(content)), 0) as total_chars
+      FROM user_memories
+      WHERE user_email = ?
+    `);
+    stmt.bind([userEmail]);
+    stmt.step();
+    const result = stmt.getAsObject().total_chars;
+    stmt.free();
+    return result;
+  }
+
+  /**
+   * Get a single memory by ID with ownership check
+   * @param {number} memoryId
+   * @param {string} userEmail
+   * @returns {Object|null}
+   */
+  getMemoryById(memoryId, userEmail) {
+    const stmt = this.db.prepare(`
+      SELECT id, content, created_at, updated_at
+      FROM user_memories
+      WHERE id = ? AND user_email = ?
+    `);
+    stmt.bind([memoryId, userEmail]);
+
+    let memory = null;
+    if (stmt.step()) {
+      memory = stmt.getAsObject();
+    }
+    stmt.free();
+    return memory;
+  }
+
+  /**
+   * Create a new memory for a user
+   * @param {string} userEmail
+   * @param {string} content
+   * @returns {number} The new memory ID
+   */
+  createMemory(userEmail, content) {
+    const stmt = this.db.prepare(`
+      INSERT INTO user_memories (user_email, content)
+      VALUES (?, ?)
+    `);
+    stmt.run([userEmail, content]);
+    stmt.free();
+
+    const idStmt = this.db.prepare('SELECT last_insert_rowid() as id');
+    idStmt.step();
+    const memoryId = idStmt.getAsObject().id;
+    idStmt.free();
+
+    this.saveThrottled();
+    return memoryId;
+  }
+
+  /**
+   * Update an existing memory with ownership check
+   * @param {number} memoryId
+   * @param {string} userEmail
+   * @param {string} content
+   * @returns {boolean} True if updated
+   */
+  updateMemory(memoryId, userEmail, content) {
+    const stmt = this.db.prepare(`
+      UPDATE user_memories
+      SET content = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND user_email = ?
+    `);
+    stmt.run([content, memoryId, userEmail]);
+    stmt.free();
+
+    const changes = this.db.getRowsModified();
+    if (changes > 0) {
+      this.saveThrottled();
+    }
+    return changes > 0;
+  }
+
+  /**
+   * Delete a memory with ownership check
+   * @param {number} memoryId
+   * @param {string} userEmail
+   * @returns {boolean} True if deleted
+   */
+  deleteMemory(memoryId, userEmail) {
+    const stmt = this.db.prepare(`
+      DELETE FROM user_memories
+      WHERE id = ? AND user_email = ?
+    `);
+    stmt.run([memoryId, userEmail]);
+    stmt.free();
+
+    const changes = this.db.getRowsModified();
+    if (changes > 0) {
+      this.saveThrottled();
+    }
+    return changes > 0;
   }
 
   /**
