@@ -892,12 +892,31 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       db: db
     };
 
+    // For streaming: set up SSE headers early so we can send status events during compaction
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+      res.on('error', () => {});
+    }
+
     // Compact long conversations (before hard token trim)
     if (conversation_id && config.enable_compaction) {
       try {
+        if (stream) {
+          sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done: false } });
+        }
         processedMessages = await compactMessages(processedMessages, config, db, conversation_id);
+        if (stream) {
+          sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done: true } });
+        }
       } catch (e) {
         console.error('⚠️ [COMPACTION] Failed, falling back to uncompacted messages:', e.message);
+        if (stream) {
+          sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done: true } });
+        }
       }
     }
 
@@ -910,14 +929,6 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       // ═══════════════════════════════════════════════════════════
       // STREAMING with Native Tool Calling
       // ═══════════════════════════════════════════════════════════
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      // Prevent crash from client disconnect during streaming
-      res.on('error', () => {});
 
       try {
         const response = await chatCompletion({

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Callable, Awaitable, Literal
 import httpx
 import json
+import time
 
 
 class Pipe:
@@ -179,6 +180,20 @@ class Pipe:
                     response.raise_for_status()
                     current_event = None
 
+                    # Batch token emissions to reduce event emitter overhead
+                    # Instead of awaiting __event_emitter__ for every token (~7000 calls),
+                    # accumulate text and flush periodically (~50 calls)
+                    token_buffer = ""
+                    last_flush = time.monotonic()
+                    FLUSH_INTERVAL = 0.2  # Flush every 200ms
+
+                    async def flush_buffer():
+                        nonlocal token_buffer, last_flush
+                        if token_buffer and __event_emitter__:
+                            await __event_emitter__({"type": "message", "data": {"content": token_buffer}})
+                            token_buffer = ""
+                            last_flush = time.monotonic()
+
                     async for line in response.aiter_lines():
                         line = line.strip()
                         if not line:
@@ -189,20 +204,28 @@ class Pipe:
                         if line.startswith('data: '):
                             data_str = line[6:]
                             if data_str == '[DONE]':
+                                await flush_buffer()
                                 break
                             try:
                                 data = json.loads(data_str)
                                 if current_event == 'status' and __event_emitter__:
+                                    await flush_buffer()
                                     await __event_emitter__({"type": "status", "data": data.get('data', {})})
                                 elif current_event == 'source' and __event_emitter__:
+                                    await flush_buffer()
                                     await __event_emitter__({"type": "citation", "data": data.get('data', {})})
                                 elif data.get('choices') and __event_emitter__:
                                     content = data['choices'][0].get('delta', {}).get('content', '')
                                     if content:
-                                        await __event_emitter__({"type": "message", "data": {"content": content}})
+                                        token_buffer += content
+                                        if time.monotonic() - last_flush >= FLUSH_INTERVAL:
+                                            await flush_buffer()
                                 current_event = None
                             except json.JSONDecodeError:
                                 current_event = None
+
+                    # Final flush in case stream ended without [DONE]
+                    await flush_buffer()
             return ""
         except httpx.TimeoutException:
             return "Error: Request timed out"
