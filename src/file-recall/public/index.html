@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File Recall — OWUI Toolset</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3348;
+    --text: #e1e4ed;
+    --text-dim: #8b8fa3;
+    --accent: #6c8aff;
+    --accent-dim: #4a62b3;
+    --success: #4ade80;
+    --error: #f87171;
+    --warning: #fbbf24;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  h1 { font-size: 1.5rem; font-weight: 600; }
+  h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
+
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+
+  .header-info { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    background: var(--surface2); padding: 4px 10px; border-radius: 12px;
+    font-size: 0.75rem; color: var(--text-dim);
+  }
+
+  button {
+    background: var(--accent); color: #fff; border: none; padding: 8px 16px;
+    border-radius: var(--radius); cursor: pointer; font-size: 0.85rem; font-weight: 500;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--accent-dim); }
+  button.secondary { background: var(--surface2); color: var(--text-dim); }
+  button.secondary:hover { background: var(--border); }
+  button.danger { background: #dc2626; }
+  button.danger:hover { background: #b91c1c; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  input, select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: var(--radius); font-size: 0.85rem; width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  /* Login */
+  .login-card {
+    max-width: 400px; margin: 80px auto; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px; padding: 32px;
+  }
+  .login-card h1 { text-align: center; margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; }
+  .login-error { color: var(--error); font-size: 0.8rem; margin-top: 8px; display: none; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px; flex: 1; min-width: 140px;
+  }
+  .stat-value { font-size: 1.3rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 12px; padding: 40px;
+    text-align: center; margin-bottom: 24px; transition: all 0.2s;
+    background: var(--surface);
+  }
+  .upload-zone.dragover { border-color: var(--accent); background: rgba(108, 138, 255, 0.05); }
+  .upload-zone p { color: var(--text-dim); margin-bottom: 16px; }
+  .upload-buttons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .upload-zone input[type="file"] { display: none; }
+
+  /* Upload progress */
+  .upload-results {
+    margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); display: none; max-height: 300px; overflow-y: auto;
+  }
+  .upload-result-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+  }
+  .upload-result-item:last-child { border-bottom: none; }
+  .upload-result-item .status-uploaded { color: var(--success); }
+  .upload-result-item .status-skipped { color: var(--warning); }
+  .upload-result-item .status-error { color: var(--error); }
+
+  /* File list */
+  .file-list-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+  }
+  .search-bar { max-width: 280px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+  th { background: var(--surface2); text-align: left; padding: 10px 14px; font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  th:hover { color: var(--text); }
+  td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 0.82rem; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .file-name { font-weight: 500; }
+  .hash-suffix { color: var(--text-dim); font-size: 0.75rem; }
+  .status-ready { color: var(--success); }
+  .status-processing { color: var(--warning); }
+  .status-error { color: var(--error); }
+  .empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
+
+  .confirm-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;
+    z-index: 100; display: none;
+  }
+  .confirm-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; max-width: 400px; width: 90%;
+  }
+  .confirm-box p { margin-bottom: 16px; }
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  .uploading-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 17, 23, 0.8); display: flex; align-items: center; justify-content: center;
+    border-radius: 12px; display: none;
+  }
+  .upload-zone { position: relative; }
+
+  @media (max-width: 640px) {
+    .stats-bar { flex-direction: column; }
+    .file-list-header { flex-direction: column; gap: 8px; }
+    .search-bar { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>File Recall</h1>
+    <div class="field">
+      <label>Instance ID</label>
+      <input type="text" id="login-instance" placeholder="e.g. client-acme">
+    </div>
+    <div class="field">
+      <label>Access Token</label>
+      <input type="password" id="login-token" placeholder="Paste your access token">
+    </div>
+    <button onclick="doLogin()" style="width:100%; margin-top: 8px;">Sign In</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Main Dashboard -->
+<div id="main-screen" style="display:none;">
+  <div class="container">
+    <div class="header">
+      <div class="header-info">
+        <h1>File Recall</h1>
+        <span class="badge" id="instance-badge"></span>
+      </div>
+      <button class="secondary" onclick="doLogout()">Sign Out</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat">
+        <div class="stat-value" id="stat-files">0</div>
+        <div class="stat-label">Files</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-size">0 B</div>
+        <div class="stat-label">Total Size</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-vs">—</div>
+        <div class="stat-label">Vector Store</div>
+      </div>
+    </div>
+
+    <!-- Upload Zone -->
+    <div class="upload-zone" id="upload-zone">
+      <p>Drag & drop files or folders here, or use the buttons below</p>
+      <p style="font-size: 0.75rem; margin-bottom: 12px;">
+        Supported: PDF, DOCX, PPTX, TXT, MD, HTML, JSON, TEX
+      </p>
+      <div class="upload-buttons">
+        <button onclick="document.getElementById('file-input').click()">Select Files</button>
+        <button class="secondary" onclick="document.getElementById('folder-input').click()">Select Folder</button>
+      </div>
+      <input type="file" id="file-input" multiple accept=".pdf,.docx,.pptx,.txt,.md,.html,.json,.tex">
+      <input type="file" id="folder-input" webkitdirectory multiple>
+      <div class="uploading-overlay" id="uploading-overlay">
+        <div style="color: var(--accent); font-weight: 500;">Uploading...</div>
+      </div>
+    </div>
+
+    <!-- Upload Results -->
+    <div class="upload-results" id="upload-results"></div>
+
+    <!-- File List -->
+    <div class="file-list-header">
+      <h2>Documents</h2>
+      <input type="text" class="search-bar" id="search-bar" placeholder="Search files..." oninput="filterFiles()">
+    </div>
+
+    <table id="file-table">
+      <thead>
+        <tr>
+          <th onclick="sortBy('filename')">Name</th>
+          <th onclick="sortBy('file_size')">Size</th>
+          <th onclick="sortBy('mime_type')">Type</th>
+          <th onclick="sortBy('status')">Status</th>
+          <th onclick="sortBy('uploaded_at')">Date</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody id="file-tbody"></tbody>
+    </table>
+    <div class="empty-state" id="empty-state" style="display:none;">
+      No documents uploaded yet. Drag files above to get started.
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <p id="confirm-text">Delete this file?</p>
+    <div class="confirm-actions">
+      <button class="secondary" onclick="hideConfirm()">Cancel</button>
+      <button class="danger" id="confirm-btn" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ALLOWED_EXT = new Set(['.pdf','.docx','.pptx','.txt','.md','.html','.json','.tex']);
+let instanceId = '';
+let accessToken = '';
+let allFiles = [];
+let sortField = 'uploaded_at';
+let sortDir = -1; // -1 = desc
+let pendingDeleteId = null;
+
+function apiBase() {
+  return `${window.location.origin}/api/v1/file-recall`;
+}
+
+function authHeaders() {
+  return { 'X-Access-Token': accessToken };
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const date = new Date(d);
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' + date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function extFromMime(mime) {
+  const map = {
+    'application/pdf': 'PDF',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
+    'text/plain': 'TXT',
+    'text/markdown': 'MD',
+    'text/html': 'HTML',
+    'application/json': 'JSON',
+    'application/x-tex': 'TEX'
+  };
+  return map[mime] || mime;
+}
+
+// ─── Auth ───────────────────────────────────────────────
+
+async function doLogin() {
+  instanceId = document.getElementById('login-instance').value.trim();
+  accessToken = document.getElementById('login-token').value.trim();
+
+  if (!instanceId || !accessToken) {
+    showLoginError('Please enter both Instance ID and Access Token');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${apiBase()}/${instanceId}/stats?token=${encodeURIComponent(accessToken)}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showLoginError(data.error || `HTTP ${res.status}`);
+      return;
+    }
+
+    sessionStorage.setItem('fr_instance', instanceId);
+    sessionStorage.setItem('fr_token', accessToken);
+    showDashboard();
+  } catch (e) {
+    showLoginError(`Connection failed: ${e.message}`);
+  }
+}
+
+function doLogout() {
+  sessionStorage.removeItem('fr_instance');
+  sessionStorage.removeItem('fr_token');
+  instanceId = '';
+  accessToken = '';
+  document.getElementById('login-screen').style.display = '';
+  document.getElementById('main-screen').style.display = 'none';
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function showDashboard() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = '';
+  document.getElementById('instance-badge').textContent = instanceId;
+  loadStats();
+  loadFiles();
+}
+
+// ─── Data loading ───────────────────────────────────────
+
+async function loadStats() {
+  try {
+    const res = await fetch(`${apiBase()}/${instanceId}/stats`, { headers: authHeaders() });
+    const data = await res.json();
+    document.getElementById('stat-files').textContent = data.file_count || 0;
+    document.getElementById('stat-size').textContent = formatSize(data.total_size_bytes || 0);
+    document.getElementById('stat-vs').textContent = data.vector_store_id ? 'Active' : 'Not created';
+  } catch (e) {
+    console.error('Failed to load stats:', e);
+  }
+}
+
+async function loadFiles() {
+  try {
+    const res = await fetch(`${apiBase()}/${instanceId}/files`, { headers: authHeaders() });
+    allFiles = await res.json();
+    renderFiles();
+  } catch (e) {
+    console.error('Failed to load files:', e);
+  }
+}
+
+function renderFiles() {
+  const tbody = document.getElementById('file-tbody');
+  const emptyState = document.getElementById('empty-state');
+  const query = document.getElementById('search-bar').value.toLowerCase();
+
+  let filtered = allFiles;
+  if (query) {
+    filtered = filtered.filter(f => f.filename.toLowerCase().includes(query));
+  }
+
+  // Sort
+  filtered.sort((a, b) => {
+    let va = a[sortField], vb = b[sortField];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return -1 * sortDir;
+    if (va > vb) return 1 * sortDir;
+    return 0;
+  });
+
+  // Check for duplicate filenames to add hash suffix
+  const nameCount = {};
+  for (const f of filtered) {
+    nameCount[f.filename] = (nameCount[f.filename] || 0) + 1;
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    emptyState.style.display = '';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  tbody.innerHTML = filtered.map(f => {
+    const showHash = nameCount[f.filename] > 1;
+    const hashSuffix = showHash ? ` <span class="hash-suffix">(${f.file_hash.substring(0, 6)})</span>` : '';
+    const statusClass = f.status === 'ready' ? 'status-ready' : f.status === 'processing' ? 'status-processing' : 'status-error';
+
+    return `<tr>
+      <td class="file-name">${escHtml(f.filename)}${hashSuffix}</td>
+      <td>${formatSize(f.file_size)}</td>
+      <td>${extFromMime(f.mime_type)}</td>
+      <td class="${statusClass}">${f.status}${f.error_message ? ': ' + escHtml(f.error_message) : ''}</td>
+      <td>${formatDate(f.uploaded_at)}</td>
+      <td><button class="danger" style="padding:4px 10px; font-size:0.75rem;" onclick="askDelete(${f.id}, '${escAttr(f.filename)}')">Del</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function escHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function escAttr(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+function filterFiles() { renderFiles(); }
+
+function sortBy(field) {
+  if (sortField === field) { sortDir *= -1; } else { sortField = field; sortDir = field === 'uploaded_at' ? -1 : 1; }
+  renderFiles();
+}
+
+// ─── Upload ─────────────────────────────────────────────
+
+const zone = document.getElementById('upload-zone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('dragover');
+  handleDroppedItems(e.dataTransfer);
+});
+
+document.getElementById('file-input').addEventListener('change', e => uploadFiles(Array.from(e.target.files)));
+document.getElementById('folder-input').addEventListener('change', e => uploadFiles(Array.from(e.target.files)));
+
+async function handleDroppedItems(dt) {
+  const files = [];
+  if (dt.items) {
+    const entries = [];
+    for (const item of dt.items) {
+      if (item.webkitGetAsEntry) {
+        entries.push(item.webkitGetAsEntry());
+      }
+    }
+    await Promise.all(entries.map(entry => traverseEntry(entry, files)));
+  } else {
+    files.push(...dt.files);
+  }
+  uploadFiles(files);
+}
+
+function traverseEntry(entry, results) {
+  return new Promise(resolve => {
+    if (entry.isFile) {
+      entry.file(file => {
+        results.push(file);
+        resolve();
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      reader.readEntries(async entries => {
+        await Promise.all(entries.map(e => traverseEntry(e, results)));
+        resolve();
+      });
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function uploadFiles(files) {
+  // Filter to allowed types client-side
+  const valid = files.filter(f => {
+    const ext = '.' + f.name.split('.').pop().toLowerCase();
+    return ALLOWED_EXT.has(ext);
+  });
+
+  const rejected = files.length - valid.length;
+
+  if (valid.length === 0) {
+    showUploadResults([{ filename: '(none)', action: 'error', message: rejected > 0 ? `${rejected} file(s) rejected — unsupported type` : 'No files selected' }]);
+    return;
+  }
+
+  const overlay = document.getElementById('uploading-overlay');
+  overlay.style.display = 'flex';
+
+  const formData = new FormData();
+  for (const f of valid) {
+    formData.append('files', f, f.name);
+  }
+
+  try {
+    const res = await fetch(`${apiBase()}/${instanceId}/upload`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: formData
+    });
+
+    const data = await res.json();
+    let results = data.results || [];
+
+    if (rejected > 0) {
+      results.push({ filename: `(${rejected} unsupported file${rejected > 1 ? 's' : ''})`, action: 'error', message: 'Filtered out client-side' });
+    }
+
+    showUploadResults(results);
+    loadStats();
+    loadFiles();
+  } catch (e) {
+    showUploadResults([{ filename: 'Upload failed', action: 'error', message: e.message }]);
+  } finally {
+    overlay.style.display = 'none';
+    // Reset file inputs
+    document.getElementById('file-input').value = '';
+    document.getElementById('folder-input').value = '';
+  }
+}
+
+function showUploadResults(results) {
+  const el = document.getElementById('upload-results');
+  el.style.display = '';
+  el.innerHTML = results.map(r => {
+    const cls = `status-${r.action}`;
+    return `<div class="upload-result-item">
+      <span>${escHtml(r.filename)}</span>
+      <span class="${cls}">${r.action}: ${escHtml(r.message)}</span>
+    </div>`;
+  }).join('');
+
+  // Auto-hide after 10s
+  setTimeout(() => { el.style.display = 'none'; }, 10000);
+}
+
+// ─── Delete ─────────────────────────────────────────────
+
+function askDelete(fileId, filename) {
+  pendingDeleteId = fileId;
+  document.getElementById('confirm-text').textContent = `Delete "${filename}"? This will remove it from OpenAI and local storage.`;
+  document.getElementById('confirm-overlay').style.display = 'flex';
+}
+
+function hideConfirm() {
+  document.getElementById('confirm-overlay').style.display = 'none';
+  pendingDeleteId = null;
+}
+
+async function confirmDelete() {
+  if (!pendingDeleteId) return;
+  const fileId = pendingDeleteId;
+  hideConfirm();
+
+  try {
+    await fetch(`${apiBase()}/${instanceId}/files/${fileId}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    });
+    loadStats();
+    loadFiles();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// ─── Init ───────────────────────────────────────────────
+
+(function init() {
+  const savedInstance = sessionStorage.getItem('fr_instance');
+  const savedToken = sessionStorage.getItem('fr_token');
+  if (savedInstance && savedToken) {
+    instanceId = savedInstance;
+    accessToken = savedToken;
+    showDashboard();
+  }
+
+  // Enter key on login
+  document.getElementById('login-token').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('login-instance').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-token').focus();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1237,6 +1237,179 @@ class DatabaseManager {
     this.saveThrottled();
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // File Recall Methods
+  // ═══════════════════════════════════════════════════════════
+
+  getFileRecallInstance(id) {
+    const stmt = this.db.prepare('SELECT * FROM file_recall_instances WHERE id = ?');
+    stmt.bind([id]);
+    const result = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return result;
+  }
+
+  getFileRecallInstances() {
+    const stmt = this.db.prepare('SELECT * FROM file_recall_instances ORDER BY created_at DESC');
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  }
+
+  getFileRecallInstanceByToken(token) {
+    const stmt = this.db.prepare('SELECT * FROM file_recall_instances WHERE access_token = ?');
+    stmt.bind([token]);
+    const result = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return result;
+  }
+
+  createFileRecallInstance(id, name, apiKey, token) {
+    const stmt = this.db.prepare(`
+      INSERT INTO file_recall_instances (id, name, openai_api_key, access_token)
+      VALUES (?, ?, ?, ?)
+    `);
+    stmt.run([id, name, apiKey, token]);
+    stmt.free();
+    this.save();
+    return this.getFileRecallInstance(id);
+  }
+
+  updateFileRecallInstance(id, updates) {
+    const fields = [];
+    const values = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.openai_api_key !== undefined) { fields.push('openai_api_key = ?'); values.push(updates.openai_api_key); }
+    if (fields.length === 0) return false;
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id);
+    const stmt = this.db.prepare(`UPDATE file_recall_instances SET ${fields.join(', ')} WHERE id = ?`);
+    stmt.run(values);
+    stmt.free();
+    this.save();
+    return this.db.getRowsModified() > 0;
+  }
+
+  deleteFileRecallInstance(id) {
+    // Files are cascade-deleted by FK, but we do it explicitly for the count
+    this.db.run('DELETE FROM file_recall_files WHERE instance_id = ?', [id]);
+    const stmt = this.db.prepare('DELETE FROM file_recall_instances WHERE id = ?');
+    stmt.run([id]);
+    stmt.free();
+    const deleted = this.db.getRowsModified() > 0;
+    this.save();
+    return deleted;
+  }
+
+  updateVectorStoreId(instanceId, vectorStoreId) {
+    const stmt = this.db.prepare(`
+      UPDATE file_recall_instances
+      SET vector_store_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    stmt.run([vectorStoreId, instanceId]);
+    stmt.free();
+    this.save();
+  }
+
+  getFileRecallFiles(instanceId) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM file_recall_files
+      WHERE instance_id = ?
+      ORDER BY uploaded_at DESC
+    `);
+    stmt.bind([instanceId]);
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  }
+
+  getFileRecallFileByHash(instanceId, hash) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM file_recall_files
+      WHERE instance_id = ? AND file_hash = ?
+    `);
+    stmt.bind([instanceId, hash]);
+    const result = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return result;
+  }
+
+  getFileRecallFileById(instanceId, fileId) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM file_recall_files
+      WHERE instance_id = ? AND id = ?
+    `);
+    stmt.bind([instanceId, fileId]);
+    const result = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return result;
+  }
+
+  insertFileRecallFile(instanceId, filename, storageName, hash, size, mimeType) {
+    const stmt = this.db.prepare(`
+      INSERT INTO file_recall_files (instance_id, filename, storage_name, file_hash, file_size, mime_type)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([instanceId, filename, storageName, hash, size, mimeType]);
+    stmt.free();
+    const idStmt = this.db.prepare('SELECT last_insert_rowid() as id');
+    idStmt.step();
+    const fileId = idStmt.getAsObject().id;
+    idStmt.free();
+    this.saveThrottled();
+    return fileId;
+  }
+
+  updateFileRecallFileStatus(fileId, status, errorMessage, openaiFileId, vsFileId) {
+    const stmt = this.db.prepare(`
+      UPDATE file_recall_files
+      SET status = ?, error_message = ?, openai_file_id = ?, openai_vs_file_id = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    stmt.run([status, errorMessage || null, openaiFileId || null, vsFileId || null, fileId]);
+    stmt.free();
+    this.saveThrottled();
+  }
+
+  deleteFileRecallFile(instanceId, fileId) {
+    const stmt = this.db.prepare('DELETE FROM file_recall_files WHERE instance_id = ? AND id = ?');
+    stmt.run([instanceId, fileId]);
+    stmt.free();
+    const deleted = this.db.getRowsModified() > 0;
+    if (deleted) this.saveThrottled();
+    return deleted;
+  }
+
+  updateFileRecallInstanceStats(instanceId) {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as file_count, COALESCE(SUM(file_size), 0) as total_size_bytes
+      FROM file_recall_files
+      WHERE instance_id = ? AND status != 'error'
+    `);
+    stmt.bind([instanceId]);
+    stmt.step();
+    const stats = stmt.getAsObject();
+    stmt.free();
+
+    const updateStmt = this.db.prepare(`
+      UPDATE file_recall_instances
+      SET file_count = ?, total_size_bytes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    updateStmt.run([stats.file_count, stats.total_size_bytes, instanceId]);
+    updateStmt.free();
+    this.saveThrottled();
+    return stats;
+  }
+
   /**
    * Close database connection
    */

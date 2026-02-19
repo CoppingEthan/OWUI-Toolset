@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Users/Ethan Copping/Documents/GitHub/OWUI-Toolset rev-parse --show-toplevel)",
+      "Bash(git ls-tree:*)",
+      "Bash(git grep:*)",
+      "Bash(node -e:*)"
+    ]
+  }
+}

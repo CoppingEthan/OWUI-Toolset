@@ -23,6 +23,7 @@ import { chatCompletion } from '../tools/providers/index.js';
 import { getEnabledToolNames } from '../tools/definitions.js';
 import { logSection, logMessages, log } from '../utils/debug-logger.js';
 import { containerManager } from '../tools/sandbox/manager.js';
+import { createFileRecallRouter } from '../file-recall/router.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,6 +162,10 @@ function isInstanceAllowed(instanceOrIp) {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() });
 });
+
+// File Recall - Management API & Dashboard
+app.use('/api/v1/file-recall', express.json(), createFileRecallRouter(db));
+app.use('/file-recall', express.static(path.join(__dirname, '..', 'file-recall', 'public')));
 
 /**
  * Debug Logging Helper - logs request details to understand OWUI data format
@@ -888,8 +893,10 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       PUBLIC_DOMAIN: publicDomain,
       // Tool toggles
       tools: config.tools,
-      // Database instance for memory tools
-      db: db
+      // Database instance for memory/file recall tools
+      db: db,
+      // File recall instance ID
+      file_recall_instance_id: config.file_recall_instance_id
     };
 
     // For streaming: set up SSE headers early so we can send status events during compaction
@@ -960,6 +967,9 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
                 const urlCount = Array.isArray(toolParams.urls) ? toolParams.urls.length : 1;
                 const urlDisplay = urlCount > 1 ? `${urlCount} URLs` : query;
                 friendlyDesc = `📄 Scraping: ${urlDisplay}...`;
+                break;
+              case 'file_recall_search':
+                friendlyDesc = `📂 Searching documents: ${query}...`;
                 break;
               default:
                 friendlyDesc = `🔧 ${toolName}: ${query}...`;
@@ -1081,6 +1091,9 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
                 const urlCount = Array.isArray(toolParams.urls) ? toolParams.urls.length : 1;
                 const urlDisplay = urlCount > 1 ? `${urlCount} URLs` : query;
                 friendlyDesc = `📄 Scraping: ${urlDisplay}...`;
+                break;
+              case 'file_recall_search':
+                friendlyDesc = `📂 Searching documents: ${query}...`;
                 break;
               default:
                 friendlyDesc = `🔧 ${toolName}: ${query}...`;

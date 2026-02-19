@@ -145,6 +145,41 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_conversation_summaries_conv_id ON conversation_summaries(conversation_id);
 
+-- File Recall - Instance configuration (one per client)
+CREATE TABLE IF NOT EXISTS file_recall_instances (
+    id TEXT PRIMARY KEY,                    -- Instance ID slug (e.g. "client-acme")
+    name TEXT NOT NULL,                     -- Display name
+    openai_api_key TEXT NOT NULL,           -- OpenAI API key for this instance
+    vector_store_id TEXT,                   -- OpenAI vector store ID (created on first upload)
+    access_token TEXT NOT NULL UNIQUE,      -- Token for dashboard access
+    file_count INTEGER DEFAULT 0,
+    total_size_bytes INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- File Recall - Uploaded files tracking
+CREATE TABLE IF NOT EXISTS file_recall_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id TEXT NOT NULL,
+    filename TEXT NOT NULL,                 -- Original filename for display
+    storage_name TEXT NOT NULL UNIQUE,      -- Hash-based name on disk (e.g. "a1b2c3d4e5f6g7h8.pdf")
+    file_hash TEXT NOT NULL,                -- SHA-256 content hash — THE identity
+    file_size INTEGER NOT NULL,
+    mime_type TEXT NOT NULL,
+    openai_file_id TEXT,                    -- OpenAI file ID
+    openai_vs_file_id TEXT,                 -- OpenAI vector store file ID
+    status TEXT DEFAULT 'processing',       -- processing | ready | error
+    error_message TEXT,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (instance_id) REFERENCES file_recall_instances(id) ON DELETE CASCADE,
+    UNIQUE(instance_id, file_hash)          -- Dedup by content hash, NOT filename
+);
+
+CREATE INDEX IF NOT EXISTS idx_fr_files_instance ON file_recall_files(instance_id);
+CREATE INDEX IF NOT EXISTS idx_fr_files_hash ON file_recall_files(instance_id, file_hash);
+
 -- View for daily statistics by model
 CREATE VIEW IF NOT EXISTS daily_statistics AS
 SELECT

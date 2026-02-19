@@ -88,6 +88,10 @@ class Pipe:
         # Tool Toggles - Date/Time Tools (local, no external service needed)
         ENABLE_DATE_TIME: bool = Field(default=True, description="Enable date/time tools (current time, date differences/calculations)")
 
+        # Tool Toggles - File Recall (requires OpenAI vector store per instance)
+        ENABLE_FILE_RECALL: bool = Field(default=False, description="Enable file recall (search internal documents via OpenAI vector store)")
+        FILE_RECALL_INSTANCE_ID: str = Field(default="", description="Instance ID for file recall - isolates document libraries between clients")
+
     def __init__(self):
         self.valves = self.Valves()
         # Disable automatic citations - we emit custom citations via events
@@ -113,7 +117,8 @@ class Pipe:
                 self.valves.ENABLE_IMAGE_BLEND
             )
         )
-        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY or self.valves.ENABLE_DATE_TIME
+        has_file_recall = self.valves.FILE_RECALL_INSTANCE_ID and self.valves.ENABLE_FILE_RECALL
+        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY or self.valves.ENABLE_DATE_TIME or has_file_recall
 
     async def pipe(
         self,
@@ -155,6 +160,7 @@ class Pipe:
                 "compaction_provider": self.valves.COMPACTION_LLM_PROVIDER,
                 "compaction_model": self.valves.COMPACTION_LLM_MODEL,
                 "enable_compaction": self.valves.ENABLE_COMPACTION,
+                "file_recall_instance_id": self.valves.FILE_RECALL_INSTANCE_ID,
                 "tools": {
                     "web_search": self.valves.ENABLE_WEB_SEARCH,
                     "web_scrape": self.valves.ENABLE_WEB_SCRAPE,
@@ -165,6 +171,7 @@ class Pipe:
                     "image_blend": self.valves.ENABLE_IMAGE_BLEND,
                     "memory": self.valves.ENABLE_MEMORY,
                     "date_time": self.valves.ENABLE_DATE_TIME,
+                    "file_recall": self.valves.ENABLE_FILE_RECALL,
                 },
             },
         }

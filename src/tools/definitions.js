@@ -443,6 +443,33 @@ IMPORTANT: If process is killed (exit 137), check if it was OOM (memory) or time
     }
   },
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // File Recall Tools
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  file_recall_search: {
+    name: 'file_recall_search',
+    description: `Search the client's internal document library. Returns the most relevant text snippets from uploaded documents, ranked by relevance.
+
+USE FOR: Finding information in internal documents, policies, procedures, reports, or stored knowledge.
+DO NOT USE FOR: General web searches or questions not about the client's documents.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query describing what to find'
+        },
+        max_results: {
+          type: 'integer',
+          description: 'Number of top snippets to return (default 10, max 50)',
+          default: 10
+        }
+      },
+      required: ['query']
+    }
+  },
+
   date_time_diff: {
     name: 'date_time_diff',
     description: `Calculate the exact difference between two dates/times. Returns years, months, days, hours, minutes, and seconds between two points in time.
@@ -659,6 +686,11 @@ export function getEnabledToolNames(config) {
       'memory_update',
       'memory_delete'
     );
+  }
+
+  // File recall - requires instance ID to be configured
+  if (config.tools.file_recall && config.file_recall_instance_id) {
+    enabledTools.push('file_recall_search');
   }
 
   // Date/time tools - always available when enabled (no external service dependency)

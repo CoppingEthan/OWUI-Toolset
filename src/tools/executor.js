@@ -6,6 +6,7 @@
 import * as tavily from './tavily.js';
 import * as comfyui from './comfyui.js';
 import * as sandbox from './sandbox/tools.js';
+import * as openaiSync from '../file-recall/openai-sync.js';
 import { formatToolResult } from './prompts.js';
 import { exportToPdf } from '../utils/pdf-exporter.js';
 import { logToolCall } from '../utils/debug-logger.js';
@@ -94,6 +95,11 @@ async function executeToolCall(toolName, params, config, callbacks = {}) {
 
       case 'memory_delete':
         executionResult = await executeMemoryDelete(params, config);
+        break;
+
+      // File recall
+      case 'file_recall_search':
+        executionResult = await executeFileRecallSearch(params, config);
         break;
 
       // Date/time tools
@@ -1428,6 +1434,90 @@ async function executeMemoryDelete(params, config) {
     sources: [],
     error: null
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// File Recall Tools
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function executeFileRecallSearch(params, config) {
+  const query = params.query;
+  const maxResults = Math.min(50, Math.max(1, params.max_results || 10));
+
+  if (!query) {
+    return {
+      result: formatToolResult('file_recall_search', 'No search query provided', true),
+      sources: [],
+      error: 'No search query provided'
+    };
+  }
+
+  const instanceId = config.file_recall_instance_id;
+  const db = config.db;
+
+  if (!instanceId || !db) {
+    return {
+      result: formatToolResult('file_recall_search', 'File recall not configured for this instance', true),
+      sources: [],
+      error: 'File recall not configured'
+    };
+  }
+
+  const instance = db.getFileRecallInstance(instanceId);
+  if (!instance) {
+    return {
+      result: formatToolResult('file_recall_search', `File recall instance "${instanceId}" not found`, true),
+      sources: [],
+      error: 'Instance not found'
+    };
+  }
+
+  if (!instance.vector_store_id) {
+    return {
+      result: formatToolResult('file_recall_search', 'No documents uploaded yet. The document library is empty.'),
+      sources: [],
+      error: null
+    };
+  }
+
+  try {
+    const client = openaiSync.getClient(instance.openai_api_key);
+    const results = await openaiSync.searchVectorStore(client, instance.vector_store_id, query, maxResults);
+
+    if (!results || results.length === 0) {
+      return {
+        result: formatToolResult('file_recall_search', `No results found for "${query}".`),
+        sources: [],
+        error: null
+      };
+    }
+
+    // Format results for LLM
+    const formatted = results.map((r, i) => {
+      const filename = r.filename || 'unknown';
+      const score = r.score ? ` (relevance: ${(r.score * 100).toFixed(1)}%)` : '';
+      const snippets = (r.content || [])
+        .filter(c => c.type === 'text')
+        .map(c => c.text)
+        .join('\n');
+      return `--- Result ${i + 1}: ${filename}${score} ---\n${snippets}`;
+    }).join('\n\n');
+
+    const resultText = `Found ${results.length} results for "${query}":\n\n${formatted}`;
+
+    return {
+      result: formatToolResult('file_recall_search', resultText),
+      sources: [],
+      error: null
+    };
+  } catch (error) {
+    console.error('File recall search error:', error.message);
+    return {
+      result: formatToolResult('file_recall_search', `Search failed: ${error.message}`, true),
+      sources: [],
+      error: error.message
+    };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
