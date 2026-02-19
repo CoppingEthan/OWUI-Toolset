@@ -73,6 +73,53 @@ All user data is stored in the `data/` directory and is **never touched** by upd
 
 Running `./deploy.sh` again pulls the latest code and only rebuilds the Docker sandbox image if the Dockerfile changed.
 
+## File Recall
+
+File Recall lets each OWUI instance search its own library of uploaded documents (PDF, DOCX, PPTX, TXT, MD, HTML, JSON, TEX) via an OpenAI vector store. Each instance is isolated with its own API key, vector store, and access token.
+
+### 1. Create an instance
+
+```bash
+curl -X POST http://localhost:3000/api/v1/file-recall/instances \
+  -H "Authorization: Bearer YOUR_API_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "client-acme",
+    "name": "Acme Corp",
+    "openai_api_key": "sk-..."
+  }'
+```
+
+Save the `access_token` from the response — clients use it to log into the dashboard.
+
+### 2. Configure the OWUI pipeline
+
+In Open WebUI, set these valves on `owui-pipe.py`:
+
+| Valve | Value |
+|-------|-------|
+| `ENABLE_FILE_RECALL` | `true` |
+| `FILE_RECALL_INSTANCE_ID` | `client-acme` |
+
+### 3. Upload documents
+
+Open `http://localhost:3000/file-recall/` in a browser, enter the instance ID and access token, then drag-and-drop files or select folders. Duplicate files (by content hash) are automatically skipped.
+
+### 4. Use in chat
+
+Once documents are uploaded, the LLM receives a `file_recall_search` tool and will automatically search the document library when relevant.
+
+### Admin API
+
+All admin endpoints require `Authorization: Bearer API_SECRET_KEY`.
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| Create instance | `POST` | `/api/v1/file-recall/instances` |
+| List instances | `GET` | `/api/v1/file-recall/instances` |
+| Update instance | `PUT` | `/api/v1/file-recall/instances/:id` |
+| Delete instance | `DELETE` | `/api/v1/file-recall/instances/:id` |
+
 ## Network Isolation
 
 The sandbox Docker containers are network-isolated:
