@@ -196,7 +196,7 @@ class Pipe:
                     # accumulate text and flush periodically (~50 calls)
                     token_buffer = ""
                     last_flush = time.monotonic()
-                    FLUSH_INTERVAL = 0.1  # Flush every 100ms
+                    FLUSH_INTERVAL = 0.05  # Flush every 50ms
 
                     async def flush_buffer():
                         nonlocal token_buffer, last_flush
