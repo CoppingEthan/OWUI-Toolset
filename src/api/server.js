@@ -909,13 +909,39 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       res.on('error', () => {});
     }
 
+    // Replace oversized user messages — checked on every request so no state needed.
+    // OWUI resends the full conversation history, so an oversized message from turn 3
+    // inflates every subsequent request. Replacing it keeps the rest of the conversation intact.
+    if (MAX_USER_MESSAGE_TOKENS > 0) {
+      const maxChars = Math.floor(MAX_USER_MESSAGE_TOKENS * 3.2);
+      const notice = `[This message exceeded the maximum allowed length of ${MAX_USER_MESSAGE_TOKENS.toLocaleString()} tokens and was removed]`;
+      for (const msg of processedMessages) {
+        if (msg.role !== 'user') continue;
+
+        if (typeof msg.content === 'string' && msg.content.length > maxChars) {
+          msg.content = notice;
+        } else if (Array.isArray(msg.content)) {
+          // Check combined text length across all text blocks
+          let textChars = 0;
+          for (const block of msg.content) {
+            if (block.type === 'text' && block.text) textChars += block.text.length;
+          }
+          if (textChars > maxChars) {
+            // Replace all text blocks with the notice, keep image blocks
+            msg.content = msg.content.filter(b => b.type !== 'text');
+            msg.content.push({ type: 'text', text: notice });
+          }
+        }
+      }
+    }
+
     // Compact long conversations (before hard token trim)
     if (conversation_id && config.enable_compaction) {
       try {
         const onCompactionStatus = stream
           ? (done) => sendSSEEvent(res, 'status', { data: { description: 'Compacting conversation...', done } })
           : null;
-        processedMessages = await compactMessages(processedMessages, config, db, conversation_id, onCompactionStatus);
+        processedMessages = await compactMessages(processedMessages, config, db, conversation_id, onCompactionStatus, enabledToolNames.length);
       } catch (e) {
         console.error('⚠️ [COMPACTION] Failed, falling back to uncompacted messages:', e.message);
         if (stream) {
@@ -925,7 +951,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     }
 
     // Enforce input token limit (trim old messages if over budget) — safety net
-    processedMessages = trimMessagesToTokenLimit(processedMessages, MAX_INPUT_TOKENS);
+    processedMessages = trimMessagesToTokenLimit(processedMessages, MAX_INPUT_TOKENS, enabledToolNames.length);
 
     let detailId = 0;
 
@@ -1361,26 +1387,62 @@ const MAX_TOOL_ITERATIONS = parseInt(process.env.MAX_TOOL_ITERATIONS || '5', 10)
 const MAX_INPUT_TOKENS = parseInt(process.env.MAX_INPUT_TOKENS || '0', 10);
 
 /**
- * Token threshold to trigger conversation compaction (0 = disabled)
- * When estimated input tokens exceed this, older messages are summarized
+ * Token threshold to trigger conversation compaction (0 = disabled).
+ * When estimated input tokens exceed this, older messages are summarized.
+ * Only takes effect when ENABLE_COMPACTION is on and a compaction model is configured in the pipeline.
  */
-const COMPACTION_TOKEN_THRESHOLD = parseInt(process.env.COMPACTION_TOKEN_THRESHOLD || '0', 10);
+const COMPACTION_TOKEN_THRESHOLD = parseInt(process.env.COMPACTION_TOKEN_THRESHOLD || '65536', 10);
 
 /**
- * Estimate token count for a message array (~4 chars per token)
+ * Max tokens for any single user message (0 = disabled).
+ * Messages exceeding this are replaced with a notice on every request.
  */
-function estimateTokens(messages) {
+const MAX_USER_MESSAGE_TOKENS = parseInt(process.env.MAX_USER_MESSAGE_TOKENS || '8192', 10);
+
+/**
+ * Estimate token count for a message array.
+ * Counts text (~3.2 chars/token), images (~500 tokens each),
+ * tool_use/tool_result blocks, and per-message structure overhead.
+ * @param {Array} messages - Message array
+ * @param {object} [options] - Optional settings
+ * @param {number} [options.toolCount=0] - Number of tool definitions in the API payload (~350 tokens each)
+ */
+function estimateTokens(messages, options = {}) {
+  const { toolCount = 0 } = options;
   let chars = 0;
+
   for (const msg of messages) {
+    // Per-message structure overhead (role, separators, metadata)
+    chars += 48; // ~15 tokens
+
     if (typeof msg.content === 'string') {
       chars += msg.content.length;
     } else if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
-        if (block.type === 'text' && block.text) chars += block.text.length;
+        if (block.type === 'text' && block.text) {
+          chars += block.text.length;
+        } else if (block.type === 'image_url' || block.type === 'image' || block.type === 'input_image') {
+          chars += 1600; // ~500 tokens
+        } else if (block.type === 'tool_use') {
+          chars += (block.name || '').length + JSON.stringify(block.input || {}).length;
+        } else if (block.type === 'tool_result') {
+          const content = block.content;
+          if (typeof content === 'string') {
+            chars += content.length;
+          } else if (Array.isArray(content)) {
+            for (const sub of content) {
+              if (sub.type === 'text' && sub.text) chars += sub.text.length;
+            }
+          }
+        }
       }
     }
   }
-  return Math.ceil(chars / 4);
+
+  // Tool definitions overhead
+  chars += toolCount * 1120; // ~350 tokens per tool definition
+
+  return Math.ceil(chars / 3.2);
 }
 
 /**
@@ -1388,10 +1450,10 @@ function estimateTokens(messages) {
  * Keeps: system messages (always), last user message (always).
  * Removes: oldest non-system messages first.
  */
-function trimMessagesToTokenLimit(messages, maxTokens) {
+function trimMessagesToTokenLimit(messages, maxTokens, toolCount = 0) {
   if (!maxTokens || maxTokens <= 0) return messages;
 
-  const estimated = estimateTokens(messages);
+  const estimated = estimateTokens(messages, { toolCount });
   if (estimated <= maxTokens) return messages;
 
   // Separate system messages (always kept) from conversation messages
@@ -1404,10 +1466,12 @@ function trimMessagesToTokenLimit(messages, maxTokens) {
   const lastMsg = convMsgs[convMsgs.length - 1];
   let trimmed = convMsgs.slice(0, -1);
 
-  // Calculate budget: total max minus system messages minus last message
+  // Calculate budget: total max minus system messages minus last message minus tool definitions
+  // toolCount only counted once here (not per-message)
   const systemTokens = estimateTokens(systemMsgs);
   const lastMsgTokens = estimateTokens([lastMsg]);
-  let budget = maxTokens - systemTokens - lastMsgTokens;
+  const toolTokens = toolCount * 350;
+  let budget = maxTokens - systemTokens - lastMsgTokens - toolTokens;
 
   // Keep as many recent messages as fit within budget (from newest to oldest)
   const kept = [];
@@ -1441,7 +1505,7 @@ function trimMessagesToTokenLimit(messages, maxTokens) {
  *
  * Always keeps the last 2 conversation messages (latest user/assistant exchange).
  */
-async function compactMessages(processedMessages, config, database, conversationId, onStatus = null) {
+async function compactMessages(processedMessages, config, database, conversationId, onStatus = null, toolCount = 0) {
   const threshold = COMPACTION_TOKEN_THRESHOLD;
   if (!threshold || threshold <= 0) return processedMessages;
   if (!config.enable_compaction) return processedMessages;
@@ -1462,7 +1526,7 @@ async function compactMessages(processedMessages, config, database, conversation
     const newMsgsSinceWatermark = convMsgs.slice(existing.watermark);
 
     // Check if summary + new messages fit under threshold
-    const estimated = estimateTokens([...systemMsgs, summaryMsg, ...newMsgsSinceWatermark]);
+    const estimated = estimateTokens([...systemMsgs, summaryMsg, ...newMsgsSinceWatermark], { toolCount });
 
     if (estimated <= threshold) {
       // Fits! Use cached summary + new messages, no re-compaction needed
@@ -1491,7 +1555,7 @@ async function compactMessages(processedMessages, config, database, conversation
 
   } else if (!existing) {
     // No existing summary — check if we need one
-    const estimated = estimateTokens(processedMessages);
+    const estimated = estimateTokens(processedMessages, { toolCount });
     if (estimated <= threshold) return processedMessages; // Under threshold, no compaction needed
 
     // Over threshold, first compaction

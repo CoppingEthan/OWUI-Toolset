@@ -326,39 +326,8 @@ export function transformMessages(messages, provider, options = {}) {
   }
 }
 
-/**
- * Estimate token count from messages (rough approximation)
- * @param {Array} messages - Messages in any format
- * @returns {number} Estimated token count
- */
-export function estimateTokens(messages) {
-  let charCount = 0;
-
-  const countContent = (content) => {
-    if (typeof content === 'string') {
-      charCount += content.length;
-    } else if (Array.isArray(content)) {
-      content.forEach(item => {
-        if (item.type === 'text' || item.type === 'input_text') {
-          charCount += (item.text || '').length;
-        }
-        // Images count as ~85-1105 tokens depending on size, use 500 as average
-        if (item.type === 'image_url' || item.type === 'input_image' || item.type === 'image') {
-          charCount += 2000; // ~500 tokens * 4 chars per token
-        }
-      });
-    }
-  };
-
-  messages.forEach(msg => {
-    countContent(msg.content);
-  });
-
-  // Rough estimate: 4 characters per token
-  return Math.ceil(charCount / 4);
-}
-
 // NOTE: Only extractImages and isMultimodalContent are currently used by the API server.
+// Token estimation is handled by estimateTokens() in src/api/server.js.
 // The transformer functions (transformToOpenAI, transformToAnthropic, transformToOllama)
 // were designed for a different architecture and are not currently integrated.
 // The LLM providers handle their own message formatting internally.

@@ -219,6 +219,38 @@ function addToolsCacheControl(tools) {
 }
 
 /**
+ * Move the cache breakpoint to the last message in conversationMessages.
+ * Removes any existing cache_control from message content blocks, then
+ * adds cache_control to the last content block of the last message.
+ * This ensures iterations 2+ get cache hits on previous conversation turns.
+ *
+ * @param {array} messages - The conversationMessages array (mutated in place)
+ */
+function refreshCacheBreakpoint(messages) {
+  if (messages.length === 0) return;
+
+  // Remove cache_control from all messages except the first one
+  // (first message breakpoint is set by addCacheControl and should stay)
+  for (let i = 1; i < messages.length; i++) {
+    const msg = messages[i];
+    if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        delete block.cache_control;
+      }
+    }
+  }
+
+  // Add cache_control to the last content block of the last message
+  const lastMsg = messages[messages.length - 1];
+  if (Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
+    lastMsg.content[lastMsg.content.length - 1].cache_control = { type: 'ephemeral' };
+  } else if (typeof lastMsg.content === 'string' && lastMsg.content.length > 500) {
+    // Convert string to content block format to attach cache_control
+    lastMsg.content = [{ type: 'text', text: lastMsg.content, cache_control: { type: 'ephemeral' } }];
+  }
+}
+
+/**
  * Handle tool calls in Claude's response
  * @param {object} response - Claude API response
  * @param {object} config - Configuration with API keys
@@ -369,8 +401,21 @@ export async function chatCompletion({
   // Add cache_control to initial messages for prompt caching
   let conversationMessages = addCacheControl([...convertedMessages]);
 
+  // Accumulate usage across all tool loop iterations (each API call is billed)
+  const totalUsage = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0
+  };
+
   while (iteration < maxIterations) {
     iteration++;
+
+    // On iterations 2+, refresh cache breakpoint so previous turns get cached
+    if (iteration > 1) {
+      refreshCacheBreakpoint(conversationMessages);
+    }
 
     // Build request payload
     const requestPayload = {
@@ -390,6 +435,14 @@ export async function chatCompletion({
 
     // DEBUG: Log exact response
     logResponse('anthropic', response);
+
+    // Accumulate usage from this iteration
+    if (response.usage) {
+      totalUsage.input_tokens += response.usage.input_tokens || 0;
+      totalUsage.output_tokens += response.usage.output_tokens || 0;
+      totalUsage.cache_creation_input_tokens += response.usage.cache_creation_input_tokens || 0;
+      totalUsage.cache_read_input_tokens += response.usage.cache_read_input_tokens || 0;
+    }
 
     // Send text content blocks to user (no artificial delay)
     const textBlocks = response.content.filter(b => b.type === 'text');
@@ -426,7 +479,7 @@ export async function chatCompletion({
     return {
       content: textBlocks.map(b => b.text).join('\n'),
       stop_reason: response.stop_reason,
-      usage: response.usage,
+      usage: totalUsage,
       iterations: iteration
     };
   }
@@ -465,8 +518,21 @@ export async function chatCompletionStream({
   // Add cache_control to initial messages for prompt caching
   let conversationMessages = addCacheControl([...convertedMessages]);
 
+  // Accumulate usage across all tool loop iterations (each API call is billed)
+  const totalUsage = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0
+  };
+
   while (iteration < maxIterations) {
     iteration++;
+
+    // On iterations 2+, refresh cache breakpoint so previous turns get cached
+    if (iteration > 1) {
+      refreshCacheBreakpoint(conversationMessages);
+    }
 
     // Build request payload
     const streamPayload = {
@@ -515,6 +581,14 @@ export async function chatCompletionStream({
     currentResponse.content = finalMessage.content;
     currentResponse.usage = finalMessage.usage;
 
+    // Accumulate usage from this iteration
+    if (currentResponse.usage) {
+      totalUsage.input_tokens += currentResponse.usage.input_tokens || 0;
+      totalUsage.output_tokens += currentResponse.usage.output_tokens || 0;
+      totalUsage.cache_creation_input_tokens += currentResponse.usage.cache_creation_input_tokens || 0;
+      totalUsage.cache_read_input_tokens += currentResponse.usage.cache_read_input_tokens || 0;
+    }
+
     // DEBUG: Log exact response
     logResponse('anthropic-stream', finalMessage);
 
@@ -552,7 +626,7 @@ export async function chatCompletionStream({
     return {
       content: textBlocks.map(b => b.text).join('\n'),
       stop_reason: currentResponse.stop_reason,
-      usage: currentResponse.usage,
+      usage: totalUsage,
       iterations: iteration
     };
   }
