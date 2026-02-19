@@ -10,6 +10,8 @@ A multi-provider LLM backend for [Open WebUI](https://github.com/open-webui/open
 - **Sandboxed Code Execution** -- Docker-based sandbox with 95+ pre-installed tools (Python, Node.js, FFmpeg, Pandoc, LibreOffice, etc.), resource-limited and network-isolated
 - **Content Extraction Engine** -- Converts uploaded files (PDF, DOCX, Excel, CSV, images, audio, code) to markdown for LLM ingestion
 - **Usage Analytics Dashboard** -- Tracks tokens, costs, tool usage, and cache performance per model with a built-in web UI
+- **User Memory** -- Persistent per-user memories stored and injected automatically across conversations
+- **Date & Time Tools** -- Current time with timezone support and date difference calculations
 - **Streaming Responses** -- Real-time token-by-token SSE streaming back to Open WebUI
 
 ## Deploy
@@ -54,6 +56,13 @@ nano /opt/owui-toolset/.env
 | `TAVILY_API_KEY` | Enables web search tools | -- |
 | `COMFYUI_BASE_URL` | Enables image generation tools | -- |
 | `DOCLING_BASE_URL` | Enables PDF/DOCX extraction | -- |
+| `PUBLIC_DOMAIN` | Public API URL (used in image links) | `http://localhost:3000` |
+| `MAX_TOOL_ITERATIONS` | Max tool call loops per request | `5` |
+| `MAX_MEMORY_CHARS` | Per-user memory character limit | `2000` |
+| `MAX_INPUT_TOKENS` | Truncate input tokens (0 = off) | `0` |
+| `COMPACTION_TOKEN_THRESHOLD` | Auto-summarize conversations above this threshold (0 = off) | `0` |
+| `ALLOWED_OWUI_INSTANCES` | IP allowlist for pipeline connections | `*` |
+| `ENABLE_CORS` | Enable CORS headers | `false` |
 
 ## Start
 
@@ -63,6 +72,8 @@ npm start
 ```
 
 Then install `owui-pipe.py` as a pipeline in Open WebUI and configure its valves to point at your API server.
+
+See [TOOLS.md](TOOLS.md) for a full reference of all available tools.
 
 ## Data & Updates
 
