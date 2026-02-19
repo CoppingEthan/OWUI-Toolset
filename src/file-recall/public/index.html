@@ -141,10 +141,19 @@
 
   .uploading-overlay {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(15, 17, 23, 0.8); display: flex; align-items: center; justify-content: center;
-    border-radius: 12px; display: none;
+    background: rgba(15, 17, 23, 0.85); display: flex; align-items: center; justify-content: center;
+    border-radius: 12px; display: none; flex-direction: column; gap: 12px;
   }
   .upload-zone { position: relative; }
+  .upload-progress-text { color: var(--accent); font-weight: 500; font-size: 0.9rem; }
+  .upload-progress-file { color: var(--text-dim); font-size: 0.78rem; max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+  .upload-progress-bar {
+    width: 200px; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden;
+  }
+  .upload-progress-fill {
+    height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s ease;
+    width: 0%;
+  }
 
   @media (max-width: 640px) {
     .stats-bar { flex-direction: column; }
@@ -212,7 +221,9 @@
       <input type="file" id="file-input" multiple accept=".pdf,.docx,.pptx,.txt,.md,.html,.json,.tex">
       <input type="file" id="folder-input" webkitdirectory multiple>
       <div class="uploading-overlay" id="uploading-overlay">
-        <div style="color: var(--accent); font-weight: 500;">Uploading...</div>
+        <div class="upload-progress-text" id="upload-progress-text">Uploading...</div>
+        <div class="upload-progress-file" id="upload-progress-file"></div>
+        <div class="upload-progress-bar"><div class="upload-progress-fill" id="upload-progress-fill"></div></div>
       </div>
     </div>
 
@@ -497,53 +508,99 @@ async function uploadFiles(files) {
   }
 
   const overlay = document.getElementById('uploading-overlay');
+  const progressText = document.getElementById('upload-progress-text');
+  const progressFile = document.getElementById('upload-progress-file');
+  const progressFill = document.getElementById('upload-progress-fill');
   overlay.style.display = 'flex';
+  progressFill.style.width = '0%';
 
-  const formData = new FormData();
-  for (const f of valid) {
-    formData.append('files', f, f.name);
-  }
+  const allResults = [];
+  const resultsEl = document.getElementById('upload-results');
+  resultsEl.style.display = '';
+  resultsEl.innerHTML = '';
+  if (uploadResultsTimer) { clearTimeout(uploadResultsTimer); uploadResultsTimer = null; }
 
-  try {
-    const res = await fetch(`${apiBase()}/${instanceId}/upload`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: formData
-    });
+  // Upload files one-by-one for per-file progress
+  for (let i = 0; i < valid.length; i++) {
+    const file = valid[i];
+    const num = i + 1;
+    const pct = Math.round((i / valid.length) * 100);
 
-    const data = await res.json();
-    let results = data.results || [];
+    progressText.textContent = `Uploading ${num} of ${valid.length}...`;
+    progressFile.textContent = file.name;
+    progressFill.style.width = `${pct}%`;
 
-    if (rejected > 0) {
-      results.push({ filename: `(${rejected} unsupported file${rejected > 1 ? 's' : ''})`, action: 'error', message: 'Filtered out client-side' });
+    try {
+      const formData = new FormData();
+      formData.append('files', file, file.name);
+
+      const res = await fetch(`${apiBase()}/${instanceId}/upload`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: formData
+      });
+
+      const data = await res.json();
+      const results = data.results || [];
+      allResults.push(...results);
+
+      // Append results live
+      for (const r of results) {
+        appendUploadResult(resultsEl, r);
+      }
+    } catch (e) {
+      const errResult = { filename: file.name, action: 'error', message: e.message };
+      allResults.push(errResult);
+      appendUploadResult(resultsEl, errResult);
     }
-
-    showUploadResults(results);
-    loadStats();
-    loadFiles();
-  } catch (e) {
-    showUploadResults([{ filename: 'Upload failed', action: 'error', message: e.message }]);
-  } finally {
-    overlay.style.display = 'none';
-    // Reset file inputs
-    document.getElementById('file-input').value = '';
-    document.getElementById('folder-input').value = '';
   }
+
+  // Add rejected count if any
+  if (rejected > 0) {
+    const rejResult = { filename: `(${rejected} unsupported file${rejected > 1 ? 's' : ''})`, action: 'error', message: 'Filtered out client-side' };
+    allResults.push(rejResult);
+    appendUploadResult(resultsEl, rejResult);
+  }
+
+  // Complete
+  progressFill.style.width = '100%';
+  const uploaded = allResults.filter(r => r.action === 'uploaded').length;
+  const skipped = allResults.filter(r => r.action === 'skipped').length;
+  const errors = allResults.filter(r => r.action === 'error').length;
+  progressText.textContent = `Done — ${uploaded} uploaded, ${skipped} skipped, ${errors} error${errors !== 1 ? 's' : ''}`;
+  progressFile.textContent = '';
+
+  // Hide overlay after a moment, auto-hide results after 15s
+  setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+  uploadResultsTimer = setTimeout(() => { resultsEl.style.display = 'none'; }, 15000);
+
+  // Reset file inputs and refresh data
+  document.getElementById('file-input').value = '';
+  document.getElementById('folder-input').value = '';
+  loadStats();
+  loadFiles();
+}
+
+let uploadResultsTimer = null;
+
+function appendUploadResult(container, r) {
+  const cls = `status-${r.action}`;
+  const div = document.createElement('div');
+  div.className = 'upload-result-item';
+  div.innerHTML = `<span>${escHtml(r.filename)}</span><span class="${cls}">${r.action}: ${escHtml(r.message)}</span>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
 }
 
 function showUploadResults(results) {
   const el = document.getElementById('upload-results');
   el.style.display = '';
-  el.innerHTML = results.map(r => {
-    const cls = `status-${r.action}`;
-    return `<div class="upload-result-item">
-      <span>${escHtml(r.filename)}</span>
-      <span class="${cls}">${r.action}: ${escHtml(r.message)}</span>
-    </div>`;
-  }).join('');
-
-  // Auto-hide after 10s
-  setTimeout(() => { el.style.display = 'none'; }, 10000);
+  el.innerHTML = '';
+  for (const r of results) {
+    appendUploadResult(el, r);
+  }
+  if (uploadResultsTimer) { clearTimeout(uploadResultsTimer); }
+  uploadResultsTimer = setTimeout(() => { el.style.display = 'none'; }, 15000);
 }
 
 // ─── Delete ─────────────────────────────────────────────
