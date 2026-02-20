@@ -103,6 +103,7 @@ LIGHTING IS KEY: "golden hour sunlight streaming through windows" > "good lighti
 FRONT-LOAD: Put most important elements first. Word order = priority.
 STYLE: Include artistic style if relevant (oil painting, photography, anime, etc.)
 
+NOTE: Generation runs server-side and typically takes 30-120 seconds. Wait for the result — do not call this tool again for the same request.
 AFTER COMPLETION: Always display the generated image to the user using markdown format: ![Brief description](image_url)`,
     parameters: {
       type: 'object',
@@ -133,9 +134,9 @@ AFTER COMPLETION: Always display the generated image to the user using markdown 
         steps: {
           type: 'integer',
           description: 'Generation quality/detail level',
-          default: 15,
-          minimum: 10,
-          maximum: 50
+          default: 4,
+          minimum: 3,
+          maximum: 5
         }
       },
       required: ['prompt']
@@ -150,6 +151,7 @@ USE FOR: style changes, enhancements, modifications, artistic transformations.
 PROMPT: Describe the desired result, not the process. "A serene Japanese garden in watercolor style" not "convert to watercolor".
 PRESERVE: Mention elements to keep. "maintaining the original composition" or "keeping the subject's pose".
 
+NOTE: Editing runs server-side and typically takes 30-120 seconds. Wait for the result — do not call this tool again for the same request.
 AFTER COMPLETION: Always display the edited image to the user using markdown format: ![Brief description](image_url)`,
     parameters: {
       type: 'object',
@@ -170,9 +172,9 @@ AFTER COMPLETION: Always display the edited image to the user using markdown for
         steps: {
           type: 'integer',
           description: 'Generation quality/detail level',
-          default: 15,
-          minimum: 10,
-          maximum: 50
+          default: 4,
+          minimum: 3,
+          maximum: 5
         }
       },
       required: ['image_url', 'prompt']
@@ -187,6 +189,7 @@ USE FOR: style transfer, merging subjects, texture application, creative combina
 PROMPT: Describe the final result referencing both sources. Specify what to take from each.
 Example: "The portrait from image 1 rendered in the impressionist painting style of image 2, with visible brushstrokes and vibrant colors"
 
+NOTE: Blending runs server-side and typically takes 30-120 seconds. Wait for the result — do not call this tool again for the same request.
 AFTER COMPLETION: Always display the blended image to the user using markdown format: ![Brief description](image_url)`,
     parameters: {
       type: 'object',
@@ -211,9 +214,9 @@ AFTER COMPLETION: Always display the blended image to the user using markdown fo
         steps: {
           type: 'integer',
           description: 'Generation quality/detail level',
-          default: 15,
-          minimum: 10,
-          maximum: 50
+          default: 4,
+          minimum: 3,
+          maximum: 5
         }
       },
       required: ['image_url_1', 'image_url_2', 'prompt']

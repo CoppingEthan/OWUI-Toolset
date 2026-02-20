@@ -23,7 +23,7 @@
   },
   "85": {
     "inputs": {
-      "steps": 30,
+      "steps": 4,
       "width": [
         "91",
         0
@@ -40,7 +40,7 @@
   },
   "86": {
     "inputs": {
-      "cfg": 5,
+      "cfg": 1,
       "model": [
         "94",
         0
@@ -162,7 +162,7 @@
   },
   "94": {
     "inputs": {
-      "unet_name": "flux-2-klein-base-9b-fp8.safetensors",
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",

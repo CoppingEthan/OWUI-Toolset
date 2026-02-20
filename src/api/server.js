@@ -960,6 +960,16 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       // STREAMING with Native Tool Calling
       // ═══════════════════════════════════════════════════════════
 
+      // Send SSE keepalive comments every 15s to prevent connection
+      // timeouts during long-running tool execution (e.g. image generation)
+      const keepAliveInterval = setInterval(() => {
+        try {
+          res.write(': keepalive\n\n');
+        } catch {
+          clearInterval(keepAliveInterval);
+        }
+      }, 15000);
+
       try {
         const response = await chatCompletion({
           model,
@@ -1059,6 +1069,8 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           }
         }
 
+        clearInterval(keepAliveInterval);
+
         console.log(`✅ Native streaming complete: ${response.iterations || 1} iterations, ${toolsUsed.length} tools, cache: ${cacheReadTokens} read / ${cacheCreationTokens} write`);
 
         sendChunk('', 'stop');
@@ -1069,6 +1081,8 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         cleanupTempProxies();
 
       } catch (llmError) {
+        clearInterval(keepAliveInterval);
+
         console.error('Native tool calling streaming error:', llmError.message);
         sendChunk(`\n\n❌ Error: ${llmError.message}\n\n`);
         sendChunk('', 'stop');

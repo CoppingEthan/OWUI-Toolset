@@ -32,7 +32,7 @@
   },
   "106": {
     "inputs": {
-      "unet_name": "flux-2-klein-base-9b-fp8.safetensors",
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -163,7 +163,7 @@
   },
   "92:70": {
     "inputs": {
-      "unet_name": "flux-2-klein-base-9b-fp8.safetensors",
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -374,7 +374,7 @@
   },
   "92:63": {
     "inputs": {
-      "cfg": 5,
+      "cfg": 1,
       "model": [
         "92:70",
         0
@@ -395,7 +395,7 @@
   },
   "92:62": {
     "inputs": {
-      "steps": 15,
+      "steps": 4,
       "width": [
         "92:81",
         0
