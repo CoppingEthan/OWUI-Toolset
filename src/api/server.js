@@ -327,9 +327,24 @@ async function handleFileUpload(req, res) {
       timestamp: new Date().toISOString()
     });
 
+    // Truncate extracted content if it exceeds the per-file token budget.
+    // Keeps first half + truncation notice + last half so the LLM sees the
+    // beginning and end of the document. It can read the full file via sandbox.
+    let pageContent = extractedContent.markdown;
+    if (MAX_USER_MESSAGE_TOKENS > 0) {
+      const maxCeeChars = Math.floor(MAX_USER_MESSAGE_TOKENS * 3.2);
+      if (pageContent.length > maxCeeChars) {
+        const halfChars = Math.floor(maxCeeChars / 2);
+        const originalTokens = Math.ceil(pageContent.length / 3.2).toLocaleString();
+        const truncNotice = `\n\n✂️ [File content truncated — showing first and last portions of ~${originalTokens} tokens. The full file is available in the sandbox at /workspace/uploaded/${cleanFilename}]\n\n`;
+        pageContent = pageContent.substring(0, halfChars) + truncNotice + pageContent.substring(pageContent.length - halfChars);
+        console.log(`✂️ CEE Truncated: ${cleanFilename} (${originalTokens} tokens → ~${MAX_USER_MESSAGE_TOKENS} tokens)`);
+      }
+    }
+
     // Return in OWUI Document format (Pydantic model expects page_content and metadata)
     res.json({
-      page_content: extractedContent.markdown,
+      page_content: pageContent,
       metadata: {
         source: cleanFilename,
         filename: cleanFilename,
@@ -909,17 +924,42 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       res.on('error', () => {});
     }
 
-    // Replace oversized user messages — checked on every request so no state needed.
+    // Truncate oversized user messages — checked on every request so no state needed.
     // OWUI resends the full conversation history, so an oversized message from turn 3
-    // inflates every subsequent request. Replacing it keeps the rest of the conversation intact.
+    // inflates every subsequent request. Older messages are replaced with a short notice.
+    // The LAST user message (current turn) is truncated instead of replaced — first half
+    // + notice + last half — so the user's question and file context are preserved.
+    // The limit for the last message scales with attached files (8k per file on top of 8k base).
     if (MAX_USER_MESSAGE_TOKENS > 0) {
-      const maxChars = Math.floor(MAX_USER_MESSAGE_TOKENS * 3.2);
+      const baseMaxChars = Math.floor(MAX_USER_MESSAGE_TOKENS * 3.2);
+      const fileCount = files?.length || 0;
+      const lastMsgMaxChars = Math.floor(MAX_USER_MESSAGE_TOKENS * (1 + fileCount) * 3.2);
       const notice = `[This message exceeded the maximum allowed length of ${MAX_USER_MESSAGE_TOKENS.toLocaleString()} tokens and was removed]`;
-      for (const msg of processedMessages) {
+
+      // Find the last user message index (current turn)
+      let lastUserIdx = -1;
+      for (let i = processedMessages.length - 1; i >= 0; i--) {
+        if (processedMessages[i].role === 'user') { lastUserIdx = i; break; }
+      }
+
+      for (let i = 0; i < processedMessages.length; i++) {
+        const msg = processedMessages[i];
         if (msg.role !== 'user') continue;
+        const isLatest = (i === lastUserIdx);
+        const maxChars = isLatest ? lastMsgMaxChars : baseMaxChars;
 
         if (typeof msg.content === 'string' && msg.content.length > maxChars) {
-          msg.content = notice;
+          if (isLatest) {
+            // Truncate: keep first half + notice + last half (preserves question at start, context at end)
+            const halfChars = Math.floor(maxChars / 2);
+            const originalTokens = Math.ceil(msg.content.length / 3.2).toLocaleString();
+            msg.content = msg.content.substring(0, halfChars) +
+              `\n\n✂️ [Message truncated — original was ~${originalTokens} tokens. First and last portions preserved.]\n\n` +
+              msg.content.substring(msg.content.length - halfChars);
+            console.log(`✂️ [MSG LIMIT] Truncated current user message: ~${originalTokens} → ~${MAX_USER_MESSAGE_TOKENS * (1 + fileCount)} tokens`);
+          } else {
+            msg.content = notice;
+          }
         } else if (Array.isArray(msg.content)) {
           // Check combined text length across all text blocks
           let textChars = 0;
@@ -927,9 +967,40 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
             if (block.type === 'text' && block.text) textChars += block.text.length;
           }
           if (textChars > maxChars) {
-            // Replace all text blocks with the notice, keep image blocks
-            msg.content = msg.content.filter(b => b.type !== 'text');
-            msg.content.push({ type: 'text', text: notice });
+            if (isLatest) {
+              // Truncate text blocks, keep image/other blocks intact
+              const halfChars = Math.floor(maxChars / 2);
+              const originalTokens = Math.ceil(textChars / 3.2).toLocaleString();
+              let remaining = halfChars;
+              const endBudget = halfChars;
+
+              // Collect all text into one string for end-portion extraction
+              const allText = msg.content.filter(b => b.type === 'text' && b.text).map(b => b.text).join('\n');
+              const endPortion = allText.substring(allText.length - endBudget);
+
+              // Truncate text blocks from the front
+              for (const block of msg.content) {
+                if (block.type === 'text' && block.text) {
+                  if (remaining <= 0) {
+                    block.text = '';
+                  } else if (block.text.length > remaining) {
+                    block.text = block.text.substring(0, remaining) +
+                      `\n\n✂️ [Message truncated — original text was ~${originalTokens} tokens. First and last portions preserved.]\n\n` +
+                      endPortion;
+                    remaining = 0;
+                  } else {
+                    remaining -= block.text.length;
+                  }
+                }
+              }
+              // Remove emptied text blocks
+              msg.content = msg.content.filter(b => b.type !== 'text' || (b.text && b.text.length > 0));
+              console.log(`✂️ [MSG LIMIT] Truncated current user message (multimodal): ~${originalTokens} → ~${MAX_USER_MESSAGE_TOKENS * (1 + fileCount)} text tokens`);
+            } else {
+              // Replace all text blocks with the notice, keep image blocks
+              msg.content = msg.content.filter(b => b.type !== 'text');
+              msg.content.push({ type: 'text', text: notice });
+            }
           }
         }
       }
@@ -1409,7 +1480,12 @@ const COMPACTION_TOKEN_THRESHOLD = parseInt(process.env.COMPACTION_TOKEN_THRESHO
 
 /**
  * Max tokens for any single user message (0 = disabled).
- * Messages exceeding this are replaced with a notice on every request.
+ * Also used as the per-file CEE content budget at the /process endpoint.
+ *
+ * Chat endpoint behavior:
+ * - Last user message: truncated (first half + notice + last half) with a dynamic
+ *   limit of MAX_USER_MESSAGE_TOKENS × (1 + fileCount) to accommodate file content.
+ * - Older user messages: replaced entirely with a short notice to prevent history bloat.
  */
 const MAX_USER_MESSAGE_TOKENS = parseInt(process.env.MAX_USER_MESSAGE_TOKENS || '8192', 10);
 

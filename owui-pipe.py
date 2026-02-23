@@ -30,17 +30,17 @@ class Pipe:
             description="Provider for tool-calling requests",
         )
         TOOL_CALLING_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-5",
+            default="claude-sonnet-4-6",
             description="Any model name for the selected provider (e.g. claude-sonnet-4-5, gpt-5.2, llama3.1:8b)",
         )
 
         # Conversational LLM (for simple chat without tools)
         CONVERSATIONAL_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
-            default="openai",
+            default="anthropic",
             description="Provider for simple chat (no tools)",
         )
         CONVERSATIONAL_LLM_MODEL: str = Field(
-            default="gpt-5.2",
+            default="claude-sonnet-4-6",
             description="Any model name for the selected provider (e.g. gpt-5.2, claude-haiku-4-5, llama3.1:8b)",
         )
 
@@ -50,7 +50,7 @@ class Pipe:
             description="Provider for conversation compaction (use a fast, cheap model)",
         )
         COMPACTION_LLM_MODEL: str = Field(
-            default="claude-haiku-4-5",
+            default="claude-sonnet-4-6",
             description="Model for compaction (e.g. claude-haiku-4-5, gpt-5, llama3.1:8b)",
         )
         ENABLE_COMPACTION: bool = Field(

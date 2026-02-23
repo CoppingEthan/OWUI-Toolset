@@ -60,6 +60,7 @@ nano /opt/owui-toolset/.env
 | `MAX_TOOL_ITERATIONS` | Max tool call loops per request | `5` |
 | `MAX_MEMORY_CHARS` | Per-user memory character limit | `2000` |
 | `MAX_INPUT_TOKENS` | Truncate input tokens (0 = off) | `0` |
+| `MAX_USER_MESSAGE_TOKENS` | Per-message and per-file token cap; scales with file count (0 = off) | `8192` |
 | `COMPACTION_TOKEN_THRESHOLD` | Auto-summarize conversations above this threshold (0 = off) | `0` |
 | `ALLOWED_OWUI_INSTANCES` | IP allowlist for pipeline connections | `*` |
 | `ENABLE_CORS` | Enable CORS headers | `false` |
