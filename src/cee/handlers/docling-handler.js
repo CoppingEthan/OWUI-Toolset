@@ -6,7 +6,7 @@
 import { getFileTypeDescription, formatFileSize } from '../../utils/file-type-detector.js';
 
 const DOCLING_URL = process.env.DOCLING_BASE_URL || 'http://10.0.0.26:5001';
-const DOCLING_TIMEOUT = 60000; // 60 seconds
+const DOCLING_TIMEOUT = 600000; // 10 minutes
 
 /**
  * Convert document using Docling API
