@@ -957,6 +957,9 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
               `\n\n✂️ [Message truncated — original was ~${originalTokens} tokens. First and last portions preserved.]\n\n` +
               msg.content.substring(msg.content.length - halfChars);
             console.log(`✂️ [MSG LIMIT] Truncated current user message: ~${originalTokens} → ~${MAX_USER_MESSAGE_TOKENS * (1 + fileCount)} tokens`);
+            if (stream) {
+              sendSSEEvent(res, 'status', { data: { description: `✂️ Your message was too long (~${originalTokens} tokens) and has been truncated`, done: true } });
+            }
           } else {
             msg.content = notice;
           }
@@ -996,6 +999,9 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
               // Remove emptied text blocks
               msg.content = msg.content.filter(b => b.type !== 'text' || (b.text && b.text.length > 0));
               console.log(`✂️ [MSG LIMIT] Truncated current user message (multimodal): ~${originalTokens} → ~${MAX_USER_MESSAGE_TOKENS * (1 + fileCount)} text tokens`);
+              if (stream) {
+                sendSSEEvent(res, 'status', { data: { description: `✂️ Your message was too long (~${originalTokens} tokens) and has been truncated`, done: true } });
+              }
             } else {
               // Replace all text blocks with the notice, keep image blocks
               msg.content = msg.content.filter(b => b.type !== 'text');
