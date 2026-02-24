@@ -837,6 +837,104 @@ class DatabaseManager {
     return rows;
   }
 
+  /**
+   * Get token usage time series grouped by domain (extracted from user_email)
+   * Used for domain-based chart coloring on the dashboard
+   */
+  getTokenUsageTimeSeriesByDomainGroup(timeRange, domain = null) {
+    let dateFormat, timeFilter;
+
+    switch (timeRange) {
+      case '1h':
+        dateFormat = "STRFTIME('%Y-%m-%d %H:', timestamp) || PRINTF('%02d', (CAST(STRFTIME('%M', timestamp) AS INTEGER) / 5) * 5)";
+        timeFilter = "timestamp >= datetime('now', '-1 hour')";
+        break;
+      case '24h':
+        dateFormat = "STRFTIME('%Y-%m-%d %H:00', timestamp)";
+        timeFilter = "timestamp >= datetime('now', '-24 hours')";
+        break;
+      case '7d':
+        dateFormat = "STRFTIME('%Y-%m-%d', timestamp)";
+        timeFilter = "timestamp >= datetime('now', '-7 days')";
+        break;
+      case '30d':
+        dateFormat = "STRFTIME('%Y-%m-%d', timestamp)";
+        timeFilter = "timestamp >= datetime('now', '-30 days')";
+        break;
+      case '1y':
+        dateFormat = "STRFTIME('%Y-%m', timestamp)";
+        timeFilter = "timestamp >= datetime('now', '-1 year')";
+        break;
+      default:
+        dateFormat = "STRFTIME('%Y-%m-%d', timestamp)";
+        timeFilter = '1=1';
+    }
+
+    let domainFilter = '';
+    const params = [];
+    if (domain) {
+      domainFilter = "AND user_email LIKE '%@' || ?";
+      params.push(domain);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT
+        ${dateFormat} as time_bucket,
+        CASE
+          WHEN INSTR(user_email, '@') > 0
+          THEN SUBSTR(user_email, INSTR(user_email, '@') + 1)
+          ELSE user_email
+        END as domain,
+        SUM(input_tokens) as input_tokens,
+        SUM(output_tokens) as output_tokens,
+        SUM(cost) as cost
+      FROM request_metrics
+      WHERE ${timeFilter}
+      AND status = 'completed'
+      AND user_email != ''
+      ${domainFilter}
+      GROUP BY time_bucket, domain
+      ORDER BY time_bucket ASC, domain ASC
+    `);
+
+    if (params.length > 0) {
+      stmt.bind(params);
+    }
+
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+
+    stmt.free();
+    return rows;
+  }
+
+  /**
+   * Get all domain color settings
+   * @returns {Object} Map of domain → hex color
+   */
+  getDomainColors() {
+    const stmt = this.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'domain_color_%' ORDER BY key");
+    const colors = {};
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      const domain = row.key.replace('domain_color_', '');
+      colors[domain] = row.value;
+    }
+    stmt.free();
+    return colors;
+  }
+
+  /**
+   * Set a domain color
+   * @param {string} domain - Domain name (e.g., 'example.com')
+   * @param {string} color - Hex color (e.g., '#f97316')
+   */
+  setDomainColor(domain, color) {
+    this.setSetting(`domain_color_${domain}`, color);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MAINTENANCE METHODS
   // ═══════════════════════════════════════════════════════════════════════════

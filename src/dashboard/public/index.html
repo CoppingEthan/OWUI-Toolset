@@ -933,6 +933,49 @@
             background: #059669;
         }
 
+        .domain-color-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .domain-color-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .domain-color-row:last-child {
+            border-bottom: none;
+        }
+
+        .domain-color-input {
+            width: 36px;
+            height: 28px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            padding: 2px;
+        }
+
+        .domain-color-input::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        .domain-color-input::-webkit-color-swatch {
+            border: none;
+            border-radius: 2px;
+        }
+
+        .domain-color-name {
+            flex: 1;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
         .cost-help {
             font-size: 11px;
             color: var(--text-muted);
@@ -1176,7 +1219,7 @@
 
             <div class="chart-container">
                 <div class="chart-header">
-                    <h2 id="chartTitle">Token Usage by Model</h2>
+                    <h2 id="chartTitle">Token Usage by Domain</h2>
                     <div class="chart-toggle">
                         <button class="chart-toggle-btn active" data-mode="tokens">Tokens</button>
                         <button class="chart-toggle-btn" data-mode="cost">Cost</button>
@@ -1317,6 +1360,14 @@
             </div>
 
             <div class="modal-section">
+                <h3>Domain Colors</h3>
+                <p>Customize chart colors for each email domain. Changes are saved automatically.</p>
+                <div id="domainColorsContainer" class="domain-color-list">
+                    <div class="no-data">No domains detected yet</div>
+                </div>
+            </div>
+
+            <div class="modal-section">
                 <h3>Danger Zone</h3>
                 <p style="margin-bottom: 16px;">Manage stored data. These actions cannot be undone.</p>
 
@@ -1354,51 +1405,48 @@
         let eventSource = null;
         let isLoading = false;
         let isInitialLoad = true;
-        let knownModels = [];
+        let knownDomains = [];
         let cachedTimeSeriesData = null; // Cache data for mode switching
         let syncCountdown = 15;
         let syncTimerInterval = null;
         let expandedRequestIds = new Set(); // Track expanded request details in modal
         let currentConversationId = null; // Track currently viewed conversation
         let timelineItems = []; // Store timeline items for details expansion
+        let domainColors = {}; // Loaded from settings: {domain: '#hex'}
+        let domainColorsLoaded = false;
 
-        // Colors for each model - output (darker) and input (lighter)
-        const MODEL_COLORS = {
-            'claude-opus-4-5': {
-                output: { bg: 'rgba(139, 92, 246, 0.9)', border: 'rgba(139, 92, 246, 1)' },
-                input: { bg: 'rgba(139, 92, 246, 0.4)', border: 'rgba(139, 92, 246, 0.6)' }
-            },
-            'claude-sonnet-4-5': {
-                output: { bg: 'rgba(168, 85, 247, 0.9)', border: 'rgba(168, 85, 247, 1)' },
-                input: { bg: 'rgba(168, 85, 247, 0.4)', border: 'rgba(168, 85, 247, 0.6)' }
-            },
-            'claude-haiku-4-5': {
-                output: { bg: 'rgba(196, 120, 253, 0.9)', border: 'rgba(196, 120, 253, 1)' },
-                input: { bg: 'rgba(196, 120, 253, 0.4)', border: 'rgba(196, 120, 253, 0.6)' }
-            },
-            'gpt-5.2': {
-                output: { bg: 'rgba(16, 185, 129, 0.9)', border: 'rgba(16, 185, 129, 1)' },
-                input: { bg: 'rgba(16, 185, 129, 0.4)', border: 'rgba(16, 185, 129, 0.6)' }
-            },
-            'gpt-5.1': {
-                output: { bg: 'rgba(52, 211, 153, 0.9)', border: 'rgba(52, 211, 153, 1)' },
-                input: { bg: 'rgba(52, 211, 153, 0.4)', border: 'rgba(52, 211, 153, 0.6)' }
-            },
-            'gpt-5': {
-                output: { bg: 'rgba(34, 197, 94, 0.9)', border: 'rgba(34, 197, 94, 1)' },
-                input: { bg: 'rgba(34, 197, 94, 0.4)', border: 'rgba(34, 197, 94, 0.6)' }
-            }
-        };
+        // Default color palette for auto-assigning domain colors
+        const DEFAULT_DOMAIN_PALETTE = [
+            '#f97316', // orange
+            '#ec4899', // pink
+            '#3b82f6', // blue
+            '#10b981', // green
+            '#8b5cf6', // purple
+            '#f59e0b', // amber
+            '#06b6d4', // cyan
+            '#ef4444', // red
+            '#84cc16', // lime
+            '#6366f1', // indigo
+        ];
 
-        // Function to get color for any model (fallback for ollama and others)
-        function getModelColors(model) {
-            if (MODEL_COLORS[model]) return MODEL_COLORS[model];
-            // Fallback colors for unknown models (like ollama)
+        // Convert hex color to rgba string
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        // Get chart colors for a domain (output=darker, input=lighter)
+        function getDomainChartColors(domain) {
+            const hex = domainColors[domain] || DEFAULT_DOMAIN_PALETTE[0];
             return {
-                output: { bg: 'rgba(100, 116, 139, 0.9)', border: 'rgba(100, 116, 139, 1)' },
-                input: { bg: 'rgba(100, 116, 139, 0.4)', border: 'rgba(100, 116, 139, 0.6)' }
+                output: { bg: hexToRgba(hex, 0.9), border: hexToRgba(hex, 1) },
+                input: { bg: hexToRgba(hex, 0.4), border: hexToRgba(hex, 0.6) }
             };
         }
+
+        // Model labels (used only in conversation modal timeline)
         const MODEL_LABELS = {
             'claude-opus-4-5': 'Opus 4.5',
             'claude-sonnet-4-5': 'Sonnet 4.5',
@@ -1629,7 +1677,7 @@
                     // Update mode and title
                     chartMode = newMode;
                     document.getElementById('chartTitle').textContent =
-                        chartMode === 'tokens' ? 'Token Usage by Model' : 'Cost by Model';
+                        chartMode === 'tokens' ? 'Token Usage by Domain' : 'Cost by Domain';
 
                     // Re-render chart with cached data
                     if (cachedTimeSeriesData) {
@@ -1671,7 +1719,7 @@
                 domains.forEach(d => {
                     const option = document.createElement('option');
                     option.value = d.domain;
-                    option.textContent = `${d.domain} (${d.count})`;
+                    option.textContent = `@${d.domain} (${d.count})`;
                     select.appendChild(option);
                 });
 
@@ -1709,11 +1757,28 @@
             };
         }
 
+        // Load domain colors from settings
+        async function loadDomainColors() {
+            try {
+                const res = await fetch('/api/settings/domain-colors');
+                const colors = await res.json();
+                domainColors = colors;
+            } catch (e) {
+                console.error('Error loading domain colors:', e);
+            }
+        }
+
         // Load all data
         async function loadData() {
             if (isLoading) return;
             isLoading = true;
             try {
+                // Load domain colors first (needed before chart rendering)
+                if (!domainColorsLoaded) {
+                    await loadDomainColors();
+                    domainColorsLoaded = true;
+                }
+
                 await Promise.all([
                     loadStatistics(),
                     loadToolCount(),
@@ -1770,30 +1835,50 @@
             }
         }
 
-        // Load token time series (by model with input/output split)
+        // Load token time series (by domain with input/output split)
         async function loadTokenTimeSeries() {
             const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
             const res = await fetch(`/api/stats/timeseries/${currentTimeRange}${domainParam}`);
             const apiData = await res.json();
 
-            // Get unique models from data
-            const modelsInData = [...new Set(apiData.map(d => d.model))];
-            if (modelsInData.length > 0) {
-                knownModels = modelsInData;
+            // Get unique domains from data
+            const domainsInData = [...new Set(apiData.map(d => d.domain))].filter(Boolean);
+            if (domainsInData.length > 0) {
+                knownDomains = domainsInData;
             }
+
+            // Auto-assign colors for new domains
+            const usedColors = new Set(Object.values(domainColors));
+            knownDomains.forEach(domain => {
+                if (!domainColors[domain]) {
+                    let color = DEFAULT_DOMAIN_PALETTE.find(c => !usedColors.has(c));
+                    if (!color) {
+                        const idx = Object.keys(domainColors).length % DEFAULT_DOMAIN_PALETTE.length;
+                        color = DEFAULT_DOMAIN_PALETTE[idx];
+                    }
+                    domainColors[domain] = color;
+                    usedColors.add(color);
+                    // Save to backend (fire and forget)
+                    fetch('/api/settings/domain-colors', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ domain, color })
+                    }).catch(() => {});
+                }
+            });
 
             // Generate fixed time buckets
             const timeBuckets = generateTimeBuckets(currentTimeRange);
             const bucketKeys = timeBuckets.map(d => formatBucketKey(d, currentTimeRange));
             const displayLabels = timeBuckets.map(d => formatBucket(d, currentTimeRange));
 
-            // Group API data by time_bucket and model (include cost)
+            // Group API data by time_bucket and domain (include cost)
             const dataMap = {};
             apiData.forEach(d => {
                 if (!dataMap[d.time_bucket]) {
                     dataMap[d.time_bucket] = {};
                 }
-                dataMap[d.time_bucket][d.model] = {
+                dataMap[d.time_bucket][d.domain] = {
                     input: d.input_tokens || 0,
                     output: d.output_tokens || 0,
                     cost: d.cost || 0
@@ -1811,18 +1896,18 @@
             const { dataMap, bucketKeys, displayLabels } = data;
             const isCostMode = chartMode === 'cost';
 
-            // Create datasets based on mode
+            // Create datasets based on mode (colored by domain)
             const datasets = [];
-            knownModels.forEach(model => {
-                const colors = getModelColors(model);
-                const label = MODEL_LABELS[model] || model;
+            knownDomains.forEach(domain => {
+                const colors = getDomainChartColors(domain);
+                const label = domain;
 
                 if (isCostMode) {
-                    // Single dataset per model for cost
+                    // Single dataset per domain for cost
                     datasets.push({
                         label: label,
                         data: bucketKeys.map(key => {
-                            const val = dataMap[key]?.[model]?.cost || 0;
+                            const val = dataMap[key]?.[domain]?.cost || 0;
                             return Math.round(val * 10000) / 10000; // Round to 4 decimals
                         }),
                         backgroundColor: colors.output.bg,
@@ -1834,21 +1919,21 @@
                     // Output dataset (darker)
                     datasets.push({
                         label: `${label} Output`,
-                        data: bucketKeys.map(key => dataMap[key]?.[model]?.output || 0),
+                        data: bucketKeys.map(key => dataMap[key]?.[domain]?.output || 0),
                         backgroundColor: colors.output.bg,
                         borderColor: colors.output.border,
                         borderWidth: 1,
-                        stack: model
+                        stack: domain
                     });
 
                     // Input dataset (lighter)
                     datasets.push({
                         label: `${label} Input`,
-                        data: bucketKeys.map(key => dataMap[key]?.[model]?.input || 0),
+                        data: bucketKeys.map(key => dataMap[key]?.[domain]?.input || 0),
                         backgroundColor: colors.input.bg,
                         borderColor: colors.input.border,
                         borderWidth: 1,
-                        stack: model
+                        stack: domain
                     });
                 }
             });
@@ -2319,6 +2404,45 @@
             document.getElementById('clearFilesBtn').disabled = true;
             document.getElementById('deleteAllBtn').disabled = true;
             loadCosts();
+            renderDomainColors();
+        }
+
+        // Domain color management
+        function renderDomainColors() {
+            const container = document.getElementById('domainColorsContainer');
+            const domains = Object.keys(domainColors).sort();
+
+            if (domains.length === 0) {
+                container.innerHTML = '<div class="no-data">No domains detected yet</div>';
+                return;
+            }
+
+            container.innerHTML = domains.map(domain => `
+                <div class="domain-color-row">
+                    <input type="color" class="domain-color-input" value="${domainColors[domain]}"
+                           onchange="updateDomainColor('${escapeHtml(domain)}', this.value)">
+                    <span class="domain-color-name">@${escapeHtml(domain)}</span>
+                </div>
+            `).join('');
+        }
+
+        async function updateDomainColor(domain, color) {
+            domainColors[domain] = color;
+
+            try {
+                await fetch('/api/settings/domain-colors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domain, color })
+                });
+            } catch (e) {
+                console.error('Error saving domain color:', e);
+            }
+
+            // Re-render chart with new colors
+            if (cachedTimeSeriesData) {
+                renderChart(cachedTimeSeriesData);
+            }
         }
 
         // Cost management
@@ -2344,11 +2468,9 @@
             }
 
             tbody.innerHTML = patterns.map(pattern => {
-                // Use MODEL_LABELS for friendly display, fall back to pattern
-                const displayName = MODEL_LABELS[pattern] || pattern;
                 return `
                 <tr data-pattern="${escapeHtml(pattern)}">
-                    <td><strong>${escapeHtml(displayName)}</strong><br><span style="font-size:10px;color:var(--text-muted)">${escapeHtml(pattern)}</span></td>
+                    <td><strong>${escapeHtml(pattern)}</strong></td>
                     <td>
                         <input type="number" value="${costs[pattern].input}" step="0.01" min="0"
                                onchange="updateCost('${escapeHtml(pattern)}', this.value, null)">

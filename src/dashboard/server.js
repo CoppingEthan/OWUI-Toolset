@@ -171,15 +171,13 @@ app.get('/api/stats/:timeRange', authenticate, (req, res) => {
   }
 });
 
-// Get token usage time series for charts (with optional domain filter)
+// Get token usage time series for charts (grouped by domain, with optional domain filter)
 app.get('/api/stats/timeseries/:timeRange', authenticate, (req, res) => {
   try {
     db.reload(); // Reload from disk to get latest data
     const { timeRange } = req.params;
     const domain = req.query.domain || null;
-    const data = domain
-      ? db.getTokenUsageTimeSeriesByDomain(timeRange, domain)
-      : db.getTokenUsageTimeSeries(timeRange);
+    const data = db.getTokenUsageTimeSeriesByDomainGroup(timeRange, domain);
     res.json(data);
   } catch (error) {
     console.error('Error fetching time series:', error);
@@ -514,6 +512,35 @@ app.delete('/api/settings/costs/:pattern', authenticate, (req, res) => {
   } catch (error) {
     console.error('Error deleting cost:', error);
     res.status(500).json({ error: 'Failed to delete cost' });
+  }
+});
+
+// Get all domain colors
+app.get('/api/settings/domain-colors', authenticate, (req, res) => {
+  try {
+    db.reload();
+    const colors = db.getDomainColors();
+    res.json(colors);
+  } catch (error) {
+    console.error('Error fetching domain colors:', error);
+    res.status(500).json({ error: 'Failed to fetch domain colors' });
+  }
+});
+
+// Update a domain color
+app.post('/api/settings/domain-colors', authenticate, (req, res) => {
+  try {
+    const { domain, color } = req.body;
+    if (!domain || !color) {
+      return res.status(400).json({ error: 'Missing required fields: domain, color' });
+    }
+    db.reload();
+    db.setDomainColor(domain, color);
+    db.save();
+    res.json({ success: true, domain, color });
+  } catch (error) {
+    console.error('Error updating domain color:', error);
+    res.status(500).json({ error: 'Failed to update domain color' });
   }
 });
 
