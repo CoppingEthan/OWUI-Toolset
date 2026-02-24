@@ -46,24 +46,27 @@ nano /opt/owui-toolset/.env
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | API server port | `3000` |
+| `HOST` | Listen address | `0.0.0.0` |
 | `DASHBOARD_PORT` | Dashboard port | `3001` |
+| `PUBLIC_DOMAIN` | Public API URL (used in image links) | `http://localhost:3000` |
 | `API_SECRET_KEY` | Bearer token for API auth | -- |
 | `DASHBOARD_USERNAME` | Dashboard login | `admin` |
 | `DASHBOARD_PASSWORD` | Dashboard login | `change_this_password` |
-| `OPENAI_API_KEY` | OpenAI API key | -- |
-| `ANTHROPIC_API_KEY` | Anthropic API key | -- |
-| `OLLAMA_BASE_URL` | Ollama server URL | -- |
-| `TAVILY_API_KEY` | Enables web search tools | -- |
-| `COMFYUI_BASE_URL` | Enables image generation tools | -- |
-| `DOCLING_BASE_URL` | Enables PDF/DOCX extraction | -- |
-| `PUBLIC_DOMAIN` | Public API URL (used in image links) | `http://localhost:3000` |
+| `ALLOWED_OWUI_INSTANCES` | IP allowlist for pipeline connections | `*` |
+| `ENABLE_CORS` | Enable CORS headers | `false` |
+| `DATABASE_PATH` | SQLite database location | `data/metrics.db` |
+| `DOCLING_BASE_URL` | Enables PDF/DOCX extraction via Docling | -- |
+| `ANTHROPIC_MAX_TOKENS` | Max output tokens for Anthropic models | `8192` |
 | `MAX_TOOL_ITERATIONS` | Max tool call loops per request | `5` |
 | `MAX_MEMORY_CHARS` | Per-user memory character limit | `2000` |
 | `MAX_INPUT_TOKENS` | Truncate input tokens (0 = off) | `0` |
 | `MAX_USER_MESSAGE_TOKENS` | Per-message and per-file token cap; scales with file count (0 = off) | `8192` |
-| `COMPACTION_TOKEN_THRESHOLD` | Auto-summarize conversations above this threshold (0 = off) | `0` |
-| `ALLOWED_OWUI_INSTANCES` | IP allowlist for pipeline connections | `*` |
-| `ENABLE_CORS` | Enable CORS headers | `false` |
+| `COMPACTION_TOKEN_THRESHOLD` | Auto-summarize conversations above this threshold (0 = off) | `65536` |
+| `COMPACTION_MAX_SUMMARY_TOKENS` | Max tokens for compaction summaries | `1024` |
+| `ALLOW_REMOTE_UPGRADE` | Allow one-click upgrade from dashboard | `false` |
+| `DEBUG_MODE` | Enable verbose debug logging | `false` |
+
+> **Note:** LLM API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`) and tool service URLs (`TAVILY_API_KEY`, `COMFYUI_BASE_URL`) are configured as **pipeline valves** in Open WebUI on `owui-pipe.py`, not in the `.env` file.
 
 ## Start
 
