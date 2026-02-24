@@ -516,6 +516,40 @@ app.delete('/api/settings/costs/:pattern', authenticate, (req, res) => {
   }
 });
 
+// Get cache pricing multipliers
+app.get('/api/settings/cache-multipliers', authenticate, (req, res) => {
+  try {
+    db.reload();
+    const multipliers = db.getCacheMultipliers();
+    res.json(multipliers);
+  } catch (error) {
+    console.error('Error fetching cache multipliers:', error);
+    res.status(500).json({ error: 'Failed to fetch cache multipliers' });
+  }
+});
+
+// Update a cache pricing multiplier
+app.post('/api/settings/cache-multipliers', authenticate, (req, res) => {
+  try {
+    const { provider, read, write } = req.body;
+    if (!provider || (read === undefined && write === undefined)) {
+      return res.status(400).json({ error: 'Missing required fields: provider, and at least one of read/write' });
+    }
+    db.reload();
+    if (read !== undefined) {
+      db.setSetting(`cache_read_multiplier_${provider}`, parseFloat(read).toString());
+    }
+    if (write !== undefined) {
+      db.setSetting(`cache_write_multiplier_${provider}`, parseFloat(write).toString());
+    }
+    console.log(`💰 Updated cache multipliers for ${provider}: read=${read}, write=${write}`);
+    res.json({ success: true, provider, read, write });
+  } catch (error) {
+    console.error('Error updating cache multipliers:', error);
+    res.status(500).json({ error: 'Failed to update cache multipliers' });
+  }
+});
+
 // Get all domain colors
 app.get('/api/settings/domain-colors', authenticate, (req, res) => {
   try {

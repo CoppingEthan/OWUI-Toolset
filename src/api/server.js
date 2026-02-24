@@ -1347,6 +1347,8 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
 // Cost cache to avoid repeated database reads
 let costCache = null;
 let costCacheTime = 0;
+let cacheMultipliersCache = null;
+let cacheMultipliersCacheTime = 0;
 const COST_CACHE_TTL = 60000; // Refresh costs from DB every 60 seconds
 
 /**
@@ -1369,12 +1371,30 @@ function getModelCostsFromDB() {
 }
 
 /**
+ * Get cache multipliers from database (with caching)
+ * @returns {Object} Cache multipliers by provider
+ */
+function getCacheMultipliersFromDB() {
+  const now = Date.now();
+  if (cacheMultipliersCache && (now - cacheMultipliersCacheTime) < COST_CACHE_TTL) {
+    return cacheMultipliersCache;
+  }
+  try {
+    cacheMultipliersCache = db.getCacheMultipliers();
+    cacheMultipliersCacheTime = now;
+    return cacheMultipliersCache;
+  } catch (error) {
+    console.error('Error loading cache multipliers from DB, using defaults:', error.message);
+    return null;
+  }
+}
+
+/**
  * Calculate cost based on model and token usage including cache tokens
  * Pricing per 1M tokens - reads from database settings, falls back to defaults
  *
- * Cache pricing:
- * - Anthropic: cache_read = 0.1x input, cache_write = 1.25x input
- * - OpenAI: cache_read = 0.1x input, cache_write = free (1.0x)
+ * Cache pricing is read from database settings (configurable via dashboard).
+ * Defaults: Anthropic cache_read=0.1x, cache_write=1.25x; OpenAI cache_read=0.1x, cache_write=1.0x
  *
  * Note: For OpenAI, input_tokens INCLUDES cached tokens, so we subtract them
  *       For Anthropic, input_tokens EXCLUDES cached tokens (separate fields)
@@ -1395,9 +1415,11 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
     }
   }
 
-  // Cache pricing multipliers
-  const cacheReadMultiplier = provider === 'anthropic' ? 0.1 : 0.1;  // Both 90% discount
-  const cacheWriteMultiplier = provider === 'anthropic' ? 1.25 : 1.0; // Anthropic 25% premium, OpenAI free
+  // Cache pricing multipliers from database (falls back to defaults)
+  const dbMultipliers = getCacheMultipliersFromDB();
+  const providerMultipliers = dbMultipliers && dbMultipliers[provider];
+  const cacheReadMultiplier = providerMultipliers ? providerMultipliers.read : (provider === 'anthropic' ? 0.1 : 0.1);
+  const cacheWriteMultiplier = providerMultipliers ? providerMultipliers.write : (provider === 'anthropic' ? 1.25 : 1.0);
 
   // For OpenAI, input_tokens includes cached tokens - subtract them for regular pricing
   // For Anthropic, input_tokens is separate from cache tokens

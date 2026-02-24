@@ -1154,6 +1154,8 @@
                 <div class="stat-item">
                     <h3>Input Tokens</h3>
                     <div class="value" id="stat-input-tokens">-</div>
+                    <div class="stat-subvalue" id="stat-cache-hit">-</div>
+                    <div class="stat-sublabel">from cache</div>
                 </div>
 
                 <div class="stat-item">
@@ -1164,14 +1166,6 @@
                 <div class="stat-item">
                     <h3>Total Cost</h3>
                     <div class="value" id="stat-cost">-</div>
-                </div>
-
-                <div class="stat-item">
-                    <h3>Cache Tokens</h3>
-                    <div class="value" id="stat-cache-read">-</div>
-                    <div class="stat-sublabel">read from cache</div>
-                    <div class="stat-subvalue" id="stat-cache-write">-</div>
-                    <div class="stat-sublabel">written to cache</div>
                 </div>
 
                 <div class="stat-item">
@@ -1240,7 +1234,7 @@
                             <th>Requests</th>
                             <th>Input</th>
                             <th>Output</th>
-                            <th>Cache</th>
+                            <th>Cache Hit</th>
                             <th>Cost</th>
                             <th>Tools</th>
                             <th>Status</th>
@@ -1276,12 +1270,8 @@
                         <div class="summary-value" id="conv-output-tokens">-</div>
                     </div>
                     <div class="summary-stat">
-                        <div class="summary-label">Cache Read</div>
+                        <div class="summary-label">Cache Hit</div>
                         <div class="summary-value" id="conv-cache-read">-</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-label">Cache Write</div>
-                        <div class="summary-value" id="conv-cache-write">-</div>
                     </div>
                     <div class="summary-stat">
                         <div class="summary-label">Total Cost</div>
@@ -1356,6 +1346,26 @@
                 <p class="cost-help">
                     Use exact model IDs (e.g., "gpt-5.2", "claude-opus-4-5") or patterns. Use "ollama" for local models.
                     Longer patterns take priority over shorter ones.
+                </p>
+            </div>
+
+            <div class="modal-section">
+                <h3>Cache Pricing (multiplier of input price)</h3>
+                <p>Controls how cached token costs are calculated relative to the base input price per model.</p>
+                <table class="cost-table" id="cacheTable">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Cache Hit</th>
+                            <th>Cache Write</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cacheTableBody">
+                        <tr><td colspan="3" class="no-data">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <p class="cost-help">
+                    0.1 = 90% discount (cache hits). 1.25 = 25% premium (Anthropic cache writes). 1.0 = no change.
                 </p>
             </div>
 
@@ -1802,13 +1812,12 @@
             const stats = await res.json() || {};
 
             document.getElementById('stat-requests').textContent = formatNumber(stats.total_requests || 0);
-            document.getElementById('stat-input-tokens').textContent = formatNumber(stats.total_input_tokens || 0);
+            // total_input_tokens now includes cache_creation; add cache_read for true total
+            const totalInput = (stats.total_input_tokens || 0) + (stats.total_cache_read_tokens || 0);
+            document.getElementById('stat-input-tokens').textContent = formatNumber(totalInput);
+            document.getElementById('stat-cache-hit').textContent = formatNumber(stats.total_cache_read_tokens || 0);
             document.getElementById('stat-output-tokens').textContent = formatNumber(stats.total_output_tokens || 0);
             document.getElementById('stat-cost').textContent = '$' + (stats.total_cost || 0).toFixed(4);
-
-            // Cache token stats
-            document.getElementById('stat-cache-read').textContent = formatNumber(stats.total_cache_read_tokens || 0);
-            document.getElementById('stat-cache-write').textContent = formatNumber(stats.total_cache_creation_tokens || 0);
         }
 
         // Load tool count
@@ -2142,12 +2151,11 @@
             // Build the table
             tbody.innerHTML = conversations.map(conv => {
                 const lastActivity = new Date(conv.last_activity).toLocaleString();
-                const inputTokens = conv.total_input_tokens || 0;
+                const inputTokens = (conv.total_input_tokens || 0) + (conv.total_cache_read_tokens || 0);
                 const outputTokens = conv.total_output_tokens || 0;
                 const cacheRead = conv.total_cache_read_tokens || 0;
-                const cacheWrite = conv.total_cache_creation_tokens || 0;
-                const cacheDisplay = (cacheRead > 0 || cacheWrite > 0)
-                    ? `<span class="cache-tokens">${formatNumber(cacheRead)}r/${formatNumber(cacheWrite)}w</span>`
+                const cacheDisplay = cacheRead > 0
+                    ? `<span class="cache-tokens">${formatNumber(cacheRead)}</span>`
                     : '-';
                 const statusBadge = conv.failed_requests > 0
                     ? `<span class="badge badge-error">${conv.failed_requests} err</span>`
@@ -2187,10 +2195,12 @@
             }
 
             // Calculate summary stats
-            const totalInputTokens = requests.reduce((sum, r) => sum + (r.input_tokens || 0), 0);
-            const totalOutputTokens = requests.reduce((sum, r) => sum + (r.output_tokens || 0), 0);
+            // input_tokens from DB is just uncached input; add cache_creation (miss = normal input) and cache_read (hit)
+            const rawInput = requests.reduce((sum, r) => sum + (r.input_tokens || 0), 0);
             const totalCacheRead = requests.reduce((sum, r) => sum + (r.cache_read_tokens || 0), 0);
             const totalCacheWrite = requests.reduce((sum, r) => sum + (r.cache_creation_tokens || 0), 0);
+            const totalInputTokens = rawInput + totalCacheWrite + totalCacheRead;
+            const totalOutputTokens = requests.reduce((sum, r) => sum + (r.output_tokens || 0), 0);
             const totalCost = requests.reduce((sum, r) => sum + (r.cost || 0), 0);
             const totalToolCalls = requests.reduce((sum, r) => sum + (r.tool_count || 0), 0);
             const firstActivity = new Date(requests[0].timestamp).toLocaleString();
@@ -2201,7 +2211,6 @@
             document.getElementById('conv-input-tokens').textContent = formatNumber(totalInputTokens);
             document.getElementById('conv-output-tokens').textContent = formatNumber(totalOutputTokens);
             document.getElementById('conv-cache-read').textContent = formatNumber(totalCacheRead);
-            document.getElementById('conv-cache-write').textContent = formatNumber(totalCacheWrite);
             document.getElementById('conv-cost').textContent = '$' + totalCost.toFixed(4);
             document.getElementById('conv-tool-calls').textContent = totalToolCalls;
             document.getElementById('conv-first-activity').textContent = firstActivity;
@@ -2452,6 +2461,7 @@
             document.getElementById('clearFilesBtn').disabled = true;
             document.getElementById('deleteAllBtn').disabled = true;
             loadCosts();
+            loadCacheMultipliers();
             renderDomainColors();
         }
 
@@ -2592,6 +2602,56 @@
             } catch (e) {
                 console.error('Error deleting cost:', e);
                 alert('Failed to delete cost');
+            }
+        }
+
+        // Cache multiplier management
+        async function loadCacheMultipliers() {
+            try {
+                const res = await fetch('/api/settings/cache-multipliers');
+                const multipliers = await res.json();
+                renderCacheTable(multipliers);
+            } catch (e) {
+                console.error('Error loading cache multipliers:', e);
+                document.getElementById('cacheTableBody').innerHTML =
+                    '<tr><td colspan="3" class="no-data">Error loading cache multipliers</td></tr>';
+            }
+        }
+
+        function renderCacheTable(multipliers) {
+            const tbody = document.getElementById('cacheTableBody');
+            const providers = Object.keys(multipliers).sort();
+
+            tbody.innerHTML = providers.map(provider => {
+                const m = multipliers[provider];
+                const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+                return `
+                <tr>
+                    <td><strong>${escapeHtml(label)}</strong></td>
+                    <td>
+                        <input type="number" value="${m.read}" step="0.01" min="0" max="2"
+                               onchange="updateCacheMultiplier('${escapeHtml(provider)}', 'read', this.value)">
+                    </td>
+                    <td>
+                        <input type="number" value="${m.write}" step="0.01" min="0" max="2"
+                               onchange="updateCacheMultiplier('${escapeHtml(provider)}', 'write', this.value)">
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        async function updateCacheMultiplier(provider, type, value) {
+            try {
+                const body = { provider };
+                body[type] = parseFloat(value);
+                await fetch('/api/settings/cache-multipliers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } catch (e) {
+                console.error('Error updating cache multiplier:', e);
+                alert('Failed to update cache multiplier');
             }
         }
 

@@ -402,7 +402,7 @@ class DatabaseManager {
     const stmt = this.db.prepare(`
       SELECT
         COUNT(*) as total_requests,
-        SUM(input_tokens) as total_input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as total_input_tokens,
         SUM(output_tokens) as total_output_tokens,
         SUM(cache_read_tokens) as total_cache_read_tokens,
         SUM(cache_creation_tokens) as total_cache_creation_tokens,
@@ -458,7 +458,7 @@ class DatabaseManager {
       SELECT
         ${dateFormat} as time_bucket,
         model,
-        SUM(input_tokens) as input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as input_tokens,
         SUM(output_tokens) as output_tokens,
         SUM(cost) as cost
       FROM request_metrics
@@ -486,7 +486,7 @@ class DatabaseManager {
         model,
         provider,
         COUNT(*) as usage_count,
-        SUM(input_tokens) as total_input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as total_input_tokens,
         SUM(output_tokens) as total_output_tokens,
         SUM(cost) as total_cost
       FROM request_metrics
@@ -666,7 +666,7 @@ class DatabaseManager {
         MIN(timestamp) as first_activity,
         MAX(timestamp) as last_activity,
         COUNT(*) as total_requests,
-        SUM(input_tokens) as total_input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as total_input_tokens,
         SUM(output_tokens) as total_output_tokens,
         SUM(cache_read_tokens) as total_cache_read_tokens,
         SUM(cache_creation_tokens) as total_cache_creation_tokens,
@@ -813,7 +813,7 @@ class DatabaseManager {
       SELECT
         ${dateFormat} as time_bucket,
         model,
-        SUM(input_tokens) as input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as input_tokens,
         SUM(output_tokens) as output_tokens,
         SUM(cost) as cost
       FROM request_metrics
@@ -885,7 +885,7 @@ class DatabaseManager {
           THEN SUBSTR(user_email, INSTR(user_email, '@') + 1)
           ELSE user_email
         END as domain,
-        SUM(input_tokens) as input_tokens,
+        SUM(input_tokens + cache_creation_tokens) as input_tokens,
         SUM(output_tokens) as output_tokens,
         SUM(cost) as cost
       FROM request_metrics
