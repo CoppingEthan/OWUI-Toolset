@@ -157,20 +157,6 @@ app.get('/api/requests/:id/tools', authenticate, (req, res) => {
   }
 });
 
-// Get statistics for a time range (with optional domain filter)
-app.get('/api/stats/:timeRange', authenticate, (req, res) => {
-  try {
-    db.reload(); // Reload from disk to get latest data
-    const { timeRange } = req.params;
-    const domain = req.query.domain || null;
-    const stats = db.getStatistics(timeRange, domain);
-    res.json(stats);
-  } catch (error) {
-    console.error('Error fetching statistics:', error);
-    res.status(500).json({ error: 'Failed to fetch statistics' });
-  }
-});
-
 // Get token usage time series for charts (grouped by domain, with optional domain filter)
 app.get('/api/stats/timeseries/:timeRange', authenticate, (req, res) => {
   try {
@@ -269,6 +255,21 @@ app.get('/api/stats/models', authenticate, (req, res) => {
   } catch (error) {
     console.error('Error fetching models:', error);
     res.status(500).json({ error: 'Failed to fetch models' });
+  }
+});
+
+// Get statistics for a time range (with optional domain filter)
+// NOTE: This must be AFTER all specific /api/stats/* routes since :timeRange is a wildcard
+app.get('/api/stats/:timeRange', authenticate, (req, res) => {
+  try {
+    db.reload();
+    const { timeRange } = req.params;
+    const domain = req.query.domain || null;
+    const stats = db.getStatistics(timeRange, domain);
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 });
 

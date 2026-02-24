@@ -1918,24 +1918,28 @@
                         stack: 'cost'
                     });
                 } else {
-                    // Output dataset (darker)
+                    // Output dataset (darker) - represents the domain in legend
                     datasets.push({
-                        label: `${label} Output`,
+                        label: label,
                         data: bucketKeys.map(key => dataMap[key]?.[domain]?.output || 0),
                         backgroundColor: colors.output.bg,
                         borderColor: colors.output.border,
                         borderWidth: 1,
-                        stack: domain
+                        stack: 'tokens',
+                        _domain: domain,
+                        _type: 'output'
                     });
 
-                    // Input dataset (lighter)
+                    // Input dataset (lighter) - hidden from legend
                     datasets.push({
                         label: `${label} Input`,
                         data: bucketKeys.map(key => dataMap[key]?.[domain]?.input || 0),
                         backgroundColor: colors.input.bg,
                         borderColor: colors.input.border,
                         borderWidth: 1,
-                        stack: domain
+                        stack: 'tokens',
+                        _domain: domain,
+                        _type: 'input'
                     });
                 }
             });
@@ -1952,9 +1956,12 @@
                 tokenChart.options.plugins.tooltip.callbacks.label = function(context) {
                     const value = context.raw || 0;
                     if (value === 0) return null;
-                    return isCostMode
-                        ? `${context.dataset.label}: $${value.toFixed(4)}`
-                        : `${context.dataset.label}: ${formatNumber(value)}`;
+                    if (isCostMode) {
+                        return `${context.dataset.label}: $${value.toFixed(4)}`;
+                    }
+                    const domain = context.dataset._domain || context.dataset.label;
+                    const type = context.dataset._type === 'input' ? 'input' : 'output';
+                    return `${domain} (${type}): ${formatNumber(value)}`;
                 };
                 tokenChart.options.plugins.tooltip.callbacks.afterBody = function(tooltipItems) {
                     const chart = tooltipItems[0].chart;
@@ -1971,12 +1978,32 @@
                         let totalInput = 0, totalOutput = 0;
                         chart.data.datasets.forEach(dataset => {
                             const value = dataset.data[dataIndex] || 0;
-                            if (dataset.label.includes('Input')) totalInput += value;
-                            else if (dataset.label.includes('Output')) totalOutput += value;
+                            if (dataset._type === 'input') totalInput += value;
+                            else totalOutput += value;
                         });
                         total = totalInput + totalOutput;
                         if (total === 0) return '';
                         return ['', '─────────────', `Total Input: ${formatNumber(totalInput)}`, `Total Output: ${formatNumber(totalOutput)}`, `Total: ${formatNumber(total)}`];
+                    }
+                };
+                tokenChart.options.plugins.legend.labels.filter = isCostMode
+                    ? undefined
+                    : (item, data) => data.datasets[item.datasetIndex]._type !== 'input';
+                tokenChart.options.plugins.legend.onClick = (e, legendItem, legend) => {
+                    const index = legendItem.datasetIndex;
+                    const ci = legend.chart;
+                    const ds = ci.data.datasets[index];
+                    if (!isCostMode && ds._domain) {
+                        // Toggle both output + input datasets for this domain
+                        ci.data.datasets.forEach((d, i) => {
+                            if (d._domain === ds._domain) {
+                                if (ci.isDatasetVisible(index)) ci.hide(i);
+                                else ci.show(i);
+                            }
+                        });
+                    } else {
+                        if (ci.isDatasetVisible(index)) ci.hide(index);
+                        else ci.show(index);
                     }
                 };
                 tokenChart.update('none');
@@ -2009,16 +2036,31 @@
                         },
                         plugins: {
                             legend: {
-                                labels: { color: '#cbd5e1' },
+                                labels: {
+                                    color: '#cbd5e1',
+                                    filter: isCostMode
+                                        ? undefined
+                                        : (item, data) => data.datasets[item.datasetIndex]._type !== 'input'
+                                },
                                 onClick: (e, legendItem, legend) => {
                                     const index = legendItem.datasetIndex;
                                     const ci = legend.chart;
-                                    if (ci.isDatasetVisible(index)) {
-                                        ci.hide(index);
-                                        legendItem.hidden = true;
+                                    const ds = ci.data.datasets[index];
+                                    if (!isCostMode && ds._domain) {
+                                        ci.data.datasets.forEach((d, i) => {
+                                            if (d._domain === ds._domain) {
+                                                if (ci.isDatasetVisible(index)) ci.hide(i);
+                                                else ci.show(i);
+                                            }
+                                        });
                                     } else {
-                                        ci.show(index);
-                                        legendItem.hidden = false;
+                                        if (ci.isDatasetVisible(index)) {
+                                            ci.hide(index);
+                                            legendItem.hidden = true;
+                                        } else {
+                                            ci.show(index);
+                                            legendItem.hidden = false;
+                                        }
                                     }
                                 }
                             },
@@ -2039,9 +2081,12 @@
                                     label: function(context) {
                                         const value = context.raw || 0;
                                         if (value === 0) return null;
-                                        return isCostMode
-                                            ? `${context.dataset.label}: $${value.toFixed(4)}`
-                                            : `${context.dataset.label}: ${formatNumber(value)}`;
+                                        if (isCostMode) {
+                                            return `${context.dataset.label}: $${value.toFixed(4)}`;
+                                        }
+                                        const domain = context.dataset._domain || context.dataset.label;
+                                        const type = context.dataset._type === 'input' ? 'input' : 'output';
+                                        return `${domain} (${type}): ${formatNumber(value)}`;
                                     },
                                     afterBody: function(tooltipItems) {
                                         const chart = tooltipItems[0].chart;
@@ -2058,8 +2103,8 @@
                                             let totalInput = 0, totalOutput = 0;
                                             chart.data.datasets.forEach(dataset => {
                                                 const value = dataset.data[dataIndex] || 0;
-                                                if (dataset.label.includes('Input')) totalInput += value;
-                                                else if (dataset.label.includes('Output')) totalOutput += value;
+                                                if (dataset._type === 'input') totalInput += value;
+                                                else totalOutput += value;
                                             });
                                             total = totalInput + totalOutput;
                                             if (total === 0) return '';
