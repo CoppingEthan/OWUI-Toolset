@@ -1716,6 +1716,7 @@
 
                 // Clear and rebuild options
                 select.innerHTML = '<option value="">All Domains</option>';
+                if (!Array.isArray(domains)) return;
                 domains.forEach(d => {
                     const option = document.createElement('option');
                     option.value = d.domain;
@@ -1798,7 +1799,7 @@
         async function loadStatistics() {
             const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
             const res = await fetch(`/api/stats/${currentTimeRange}${domainParam}`);
-            const stats = await res.json();
+            const stats = await res.json() || {};
 
             document.getElementById('stat-requests').textContent = formatNumber(stats.total_requests || 0);
             document.getElementById('stat-input-tokens').textContent = formatNumber(stats.total_input_tokens || 0);
@@ -1817,13 +1818,13 @@
                 fetch(`/api/stats/tool-count${domainParam}`),
                 fetch(`/api/stats/tools${domainParam}`)
             ]);
-            const { count } = await countRes.json();
+            const countData = await countRes.json();
             const toolStats = await statsRes.json();
 
-            document.getElementById('stat-tool-count').textContent = formatNumber(count);
+            document.getElementById('stat-tool-count').textContent = formatNumber(countData.count || 0);
 
             const breakdown = document.getElementById('tool-breakdown');
-            if (toolStats.length === 0) {
+            if (!Array.isArray(toolStats) || toolStats.length === 0) {
                 breakdown.innerHTML = '';
             } else {
                 breakdown.innerHTML = toolStats.slice(0, 3).map(t => `
@@ -1840,6 +1841,7 @@
             const domainParam = currentDomain ? `?domain=${encodeURIComponent(currentDomain)}` : '';
             const res = await fetch(`/api/stats/timeseries/${currentTimeRange}${domainParam}`);
             const apiData = await res.json();
+            if (!Array.isArray(apiData)) return;
 
             // Get unique domains from data
             const domainsInData = [...new Set(apiData.map(d => d.domain))].filter(Boolean);
@@ -2375,6 +2377,7 @@
 
         // Utility functions
         function formatNumber(num) {
+            if (num == null) return '0';
             if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
             if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
             return num.toString();
