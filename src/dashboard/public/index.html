@@ -1216,6 +1216,7 @@
                     <h2 id="chartTitle">Token Usage by Domain</h2>
                     <div class="chart-toggle">
                         <button class="chart-toggle-btn active" data-mode="tokens">Tokens</button>
+                        <button class="chart-toggle-btn" data-mode="split">Split</button>
                         <button class="chart-toggle-btn" data-mode="cost">Cost</button>
                     </div>
                 </div>
@@ -1344,9 +1345,13 @@
                     <button class="add-cost-btn" onclick="addCost()">Add</button>
                 </div>
                 <p class="cost-help">
-                    Use exact model IDs (e.g., "gpt-5.2", "claude-opus-4-5") or patterns. Use "ollama" for local models.
+                    Use exact model IDs (e.g., "gpt-5.2", "claude-sonnet-4-6") or patterns. Use "ollama" for local models.
                     Longer patterns take priority over shorter ones.
                 </p>
+                <button class="save-costs-btn" onclick="recalculateCosts()" id="recalcBtn" style="margin-top: 8px; background: #f59e0b;">
+                    Recalculate All Historical Costs
+                </button>
+                <p class="cost-help" id="recalcStatus"></p>
             </div>
 
             <div class="modal-section">
@@ -1410,7 +1415,7 @@
         // State
         let currentTimeRange = '1h';
         let currentDomain = '';
-        let chartMode = 'tokens'; // 'tokens' or 'cost'
+        let chartMode = 'tokens'; // 'tokens', 'split', or 'cost'
         let tokenChart = null;
         let eventSource = null;
         let isLoading = false;
@@ -1452,13 +1457,16 @@
             const hex = domainColors[domain] || DEFAULT_DOMAIN_PALETTE[0];
             return {
                 output: { bg: hexToRgba(hex, 0.9), border: hexToRgba(hex, 1) },
-                input: { bg: hexToRgba(hex, 0.4), border: hexToRgba(hex, 0.6) }
+                cache: { bg: hexToRgba(hex, 0.55), border: hexToRgba(hex, 0.7) },
+                input: { bg: hexToRgba(hex, 0.25), border: hexToRgba(hex, 0.4) }
             };
         }
 
         // Model labels (used only in conversation modal timeline)
         const MODEL_LABELS = {
+            'claude-opus-4-6': 'Opus 4.6',
             'claude-opus-4-5': 'Opus 4.5',
+            'claude-sonnet-4-6': 'Sonnet 4.6',
             'claude-sonnet-4-5': 'Sonnet 4.5',
             'claude-haiku-4-5': 'Haiku 4.5',
             'gpt-5': 'GPT-5',
@@ -1686,8 +1694,8 @@
 
                     // Update mode and title
                     chartMode = newMode;
-                    document.getElementById('chartTitle').textContent =
-                        chartMode === 'tokens' ? 'Token Usage by Domain' : 'Cost by Domain';
+                    const titles = { tokens: 'Token Usage by Domain', split: 'Token Usage by Domain (Split)', cost: 'Cost by Domain' };
+                    document.getElementById('chartTitle').textContent = titles[chartMode];
 
                     // Re-render chart with cached data
                     if (cachedTimeSeriesData) {
@@ -1883,7 +1891,7 @@
             const bucketKeys = timeBuckets.map(d => formatBucketKey(d, currentTimeRange));
             const displayLabels = timeBuckets.map(d => formatBucket(d, currentTimeRange));
 
-            // Group API data by time_bucket and domain (include cost)
+            // Group API data by time_bucket and domain (include cost and cache)
             const dataMap = {};
             apiData.forEach(d => {
                 if (!dataMap[d.time_bucket]) {
@@ -1891,6 +1899,7 @@
                 }
                 dataMap[d.time_bucket][d.domain] = {
                     input: d.input_tokens || 0,
+                    cache_read: d.cache_read_tokens || 0,
                     output: d.output_tokens || 0,
                     cost: d.cost || 0
                 };
@@ -1903,9 +1912,89 @@
             renderChart(cachedTimeSeriesData);
         }
 
+        // Shared chart callback functions (used by both update and create paths)
+        function chartTooltipLabel(context) {
+            const value = context.raw || 0;
+            if (value === 0) return null;
+            if (chartMode === 'cost') {
+                return `${context.dataset.label}: $${value.toFixed(4)}`;
+            }
+            if (chartMode === 'tokens') {
+                return `${context.dataset.label}: ${formatNumber(value)}`;
+            }
+            // split mode
+            const domain = context.dataset._domain || context.dataset.label;
+            const typeLabels = { input: 'input', cache: 'cache', output: 'output' };
+            const type = typeLabels[context.dataset._type] || 'total';
+            return `${domain} (${type}): ${formatNumber(value)}`;
+        }
+
+        function chartTooltipAfterBody(tooltipItems) {
+            const chart = tooltipItems[0].chart;
+            const dataIndex = tooltipItems[0].dataIndex;
+
+            if (chartMode === 'cost') {
+                let total = 0;
+                chart.data.datasets.forEach(ds => { total += ds.data[dataIndex] || 0; });
+                if (total === 0) return '';
+                return ['', '─────────────', `Total: $${total.toFixed(4)}`];
+            }
+            if (chartMode === 'tokens') {
+                let total = 0;
+                chart.data.datasets.forEach(ds => { total += ds.data[dataIndex] || 0; });
+                if (total === 0) return '';
+                return ['', '─────────────', `Total: ${formatNumber(total)}`];
+            }
+            // split mode
+            let totalInput = 0, totalCache = 0, totalOutput = 0;
+            chart.data.datasets.forEach(ds => {
+                const v = ds.data[dataIndex] || 0;
+                if (ds._type === 'input') totalInput += v;
+                else if (ds._type === 'cache') totalCache += v;
+                else if (ds._type === 'output') totalOutput += v;
+            });
+            const total = totalInput + totalCache + totalOutput;
+            if (total === 0) return '';
+            return ['', '─────────────',
+                `Total Input: ${formatNumber(totalInput)}`,
+                `Total Cache: ${formatNumber(totalCache)}`,
+                `Total Output: ${formatNumber(totalOutput)}`,
+                `Total: ${formatNumber(total)}`];
+        }
+
+        function chartLegendFilter(item, data) {
+            if (chartMode === 'cost' || chartMode === 'tokens') return true;
+            // split mode: only show the output dataset (which carries the domain name) in the legend
+            return data.datasets[item.datasetIndex]._type === 'output';
+        }
+
+        function chartLegendClick(e, legendItem, legend) {
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const ds = ci.data.datasets[index];
+            if (chartMode === 'split' && ds._domain) {
+                // Toggle all datasets (output + cache + input) for this domain
+                ci.data.datasets.forEach((d, i) => {
+                    if (d._domain === ds._domain) {
+                        if (ci.isDatasetVisible(index)) ci.hide(i);
+                        else ci.show(i);
+                    }
+                });
+            } else {
+                if (ci.isDatasetVisible(index)) {
+                    ci.hide(index);
+                    legendItem.hidden = true;
+                } else {
+                    ci.show(index);
+                    legendItem.hidden = false;
+                }
+            }
+        }
+
         function renderChart(data) {
             const { dataMap, bucketKeys, displayLabels } = data;
             const isCostMode = chartMode === 'cost';
+            const isSplitMode = chartMode === 'split';
 
             // Create datasets based on mode (colored by domain)
             const datasets = [];
@@ -1926,8 +2015,8 @@
                         borderWidth: 1,
                         stack: 'cost'
                     });
-                } else {
-                    // Output dataset (darker) - represents the domain in legend
+                } else if (isSplitMode) {
+                    // Three datasets per domain: output (dark), cache (mid), input (light)
                     datasets.push({
                         label: label,
                         data: bucketKeys.map(key => dataMap[key]?.[domain]?.output || 0),
@@ -1938,8 +2027,16 @@
                         _domain: domain,
                         _type: 'output'
                     });
-
-                    // Input dataset (lighter) - hidden from legend
+                    datasets.push({
+                        label: `${label} Cache`,
+                        data: bucketKeys.map(key => dataMap[key]?.[domain]?.cache_read || 0),
+                        backgroundColor: colors.cache.bg,
+                        borderColor: colors.cache.border,
+                        borderWidth: 1,
+                        stack: 'tokens',
+                        _domain: domain,
+                        _type: 'cache'
+                    });
                     datasets.push({
                         label: `${label} Input`,
                         data: bucketKeys.map(key => dataMap[key]?.[domain]?.input || 0),
@@ -1949,6 +2046,21 @@
                         stack: 'tokens',
                         _domain: domain,
                         _type: 'input'
+                    });
+                } else {
+                    // Combined total: single dataset per domain
+                    datasets.push({
+                        label: label,
+                        data: bucketKeys.map(key => {
+                            const d = dataMap[key]?.[domain];
+                            return d ? (d.input + d.cache_read + d.output) : 0;
+                        }),
+                        backgroundColor: colors.output.bg,
+                        borderColor: colors.output.border,
+                        borderWidth: 1,
+                        stack: 'tokens',
+                        _domain: domain,
+                        _type: 'total'
                     });
                 }
             });
@@ -1962,59 +2074,10 @@
                 tokenChart.options.scales.y.ticks.callback = isCostMode
                     ? (value) => '$' + value.toFixed(2)
                     : (value) => formatNumber(value);
-                tokenChart.options.plugins.tooltip.callbacks.label = function(context) {
-                    const value = context.raw || 0;
-                    if (value === 0) return null;
-                    if (isCostMode) {
-                        return `${context.dataset.label}: $${value.toFixed(4)}`;
-                    }
-                    const domain = context.dataset._domain || context.dataset.label;
-                    const type = context.dataset._type === 'input' ? 'input' : 'output';
-                    return `${domain} (${type}): ${formatNumber(value)}`;
-                };
-                tokenChart.options.plugins.tooltip.callbacks.afterBody = function(tooltipItems) {
-                    const chart = tooltipItems[0].chart;
-                    const dataIndex = tooltipItems[0].dataIndex;
-                    let total = 0;
-
-                    if (isCostMode) {
-                        chart.data.datasets.forEach(dataset => {
-                            total += dataset.data[dataIndex] || 0;
-                        });
-                        if (total === 0) return '';
-                        return ['', '─────────────', `Total: $${total.toFixed(4)}`];
-                    } else {
-                        let totalInput = 0, totalOutput = 0;
-                        chart.data.datasets.forEach(dataset => {
-                            const value = dataset.data[dataIndex] || 0;
-                            if (dataset._type === 'input') totalInput += value;
-                            else totalOutput += value;
-                        });
-                        total = totalInput + totalOutput;
-                        if (total === 0) return '';
-                        return ['', '─────────────', `Total Input: ${formatNumber(totalInput)}`, `Total Output: ${formatNumber(totalOutput)}`, `Total: ${formatNumber(total)}`];
-                    }
-                };
-                tokenChart.options.plugins.legend.labels.filter = isCostMode
-                    ? undefined
-                    : (item, data) => data.datasets[item.datasetIndex]._type !== 'input';
-                tokenChart.options.plugins.legend.onClick = (e, legendItem, legend) => {
-                    const index = legendItem.datasetIndex;
-                    const ci = legend.chart;
-                    const ds = ci.data.datasets[index];
-                    if (!isCostMode && ds._domain) {
-                        // Toggle both output + input datasets for this domain
-                        ci.data.datasets.forEach((d, i) => {
-                            if (d._domain === ds._domain) {
-                                if (ci.isDatasetVisible(index)) ci.hide(i);
-                                else ci.show(i);
-                            }
-                        });
-                    } else {
-                        if (ci.isDatasetVisible(index)) ci.hide(index);
-                        else ci.show(index);
-                    }
-                };
+                tokenChart.options.plugins.tooltip.callbacks.label = chartTooltipLabel;
+                tokenChart.options.plugins.tooltip.callbacks.afterBody = chartTooltipAfterBody;
+                tokenChart.options.plugins.legend.labels.filter = chartLegendFilter;
+                tokenChart.options.plugins.legend.onClick = chartLegendClick;
                 tokenChart.update('none');
             } else {
                 if (tokenChart) tokenChart.destroy();
@@ -2045,33 +2108,8 @@
                         },
                         plugins: {
                             legend: {
-                                labels: {
-                                    color: '#cbd5e1',
-                                    filter: isCostMode
-                                        ? undefined
-                                        : (item, data) => data.datasets[item.datasetIndex]._type !== 'input'
-                                },
-                                onClick: (e, legendItem, legend) => {
-                                    const index = legendItem.datasetIndex;
-                                    const ci = legend.chart;
-                                    const ds = ci.data.datasets[index];
-                                    if (!isCostMode && ds._domain) {
-                                        ci.data.datasets.forEach((d, i) => {
-                                            if (d._domain === ds._domain) {
-                                                if (ci.isDatasetVisible(index)) ci.hide(i);
-                                                else ci.show(i);
-                                            }
-                                        });
-                                    } else {
-                                        if (ci.isDatasetVisible(index)) {
-                                            ci.hide(index);
-                                            legendItem.hidden = true;
-                                        } else {
-                                            ci.show(index);
-                                            legendItem.hidden = false;
-                                        }
-                                    }
-                                }
+                                labels: { color: '#cbd5e1', filter: chartLegendFilter },
+                                onClick: chartLegendClick
                             },
                             tooltip: {
                                 mode: 'index',
@@ -2084,42 +2122,9 @@
                                 padding: 12,
                                 cornerRadius: 8,
                                 callbacks: {
-                                    title: function(tooltipItems) {
-                                        return tooltipItems[0].label;
-                                    },
-                                    label: function(context) {
-                                        const value = context.raw || 0;
-                                        if (value === 0) return null;
-                                        if (isCostMode) {
-                                            return `${context.dataset.label}: $${value.toFixed(4)}`;
-                                        }
-                                        const domain = context.dataset._domain || context.dataset.label;
-                                        const type = context.dataset._type === 'input' ? 'input' : 'output';
-                                        return `${domain} (${type}): ${formatNumber(value)}`;
-                                    },
-                                    afterBody: function(tooltipItems) {
-                                        const chart = tooltipItems[0].chart;
-                                        const dataIndex = tooltipItems[0].dataIndex;
-                                        let total = 0;
-
-                                        if (isCostMode) {
-                                            chart.data.datasets.forEach(dataset => {
-                                                total += dataset.data[dataIndex] || 0;
-                                            });
-                                            if (total === 0) return '';
-                                            return ['', '─────────────', `Total: $${total.toFixed(4)}`];
-                                        } else {
-                                            let totalInput = 0, totalOutput = 0;
-                                            chart.data.datasets.forEach(dataset => {
-                                                const value = dataset.data[dataIndex] || 0;
-                                                if (dataset._type === 'input') totalInput += value;
-                                                else totalOutput += value;
-                                            });
-                                            total = totalInput + totalOutput;
-                                            if (total === 0) return '';
-                                            return ['', '─────────────', `Total Input: ${formatNumber(totalInput)}`, `Total Output: ${formatNumber(totalOutput)}`, `Total: ${formatNumber(total)}`];
-                                        }
-                                    }
+                                    title: function(tooltipItems) { return tooltipItems[0].label; },
+                                    label: chartTooltipLabel,
+                                    afterBody: chartTooltipAfterBody
                                 }
                             }
                         }
@@ -2603,6 +2608,31 @@
                 console.error('Error deleting cost:', e);
                 alert('Failed to delete cost');
             }
+        }
+
+        async function recalculateCosts() {
+            if (!confirm('Recalculate costs for ALL historical requests using current pricing? This cannot be undone.')) return;
+            const btn = document.getElementById('recalcBtn');
+            const status = document.getElementById('recalcStatus');
+            btn.disabled = true;
+            btn.textContent = 'Recalculating...';
+            status.textContent = '';
+            try {
+                const res = await fetch('/api/settings/recalculate-costs', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    status.textContent = `Done — ${data.updated} requests recalculated. Refresh dashboard to see updated costs.`;
+                    status.style.color = '#10b981';
+                } else {
+                    status.textContent = 'Error: ' + (data.error || 'Unknown error');
+                    status.style.color = '#ef4444';
+                }
+            } catch (e) {
+                status.textContent = 'Failed: ' + e.message;
+                status.style.color = '#ef4444';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Recalculate All Historical Costs';
         }
 
         // Cache multiplier management

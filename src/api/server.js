@@ -1433,11 +1433,31 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
   if (dbCosts) {
     // Check patterns in priority order (most specific first)
     const patterns = Object.keys(dbCosts).sort((a, b) => b.length - a.length);
+    let matched = false;
     for (const pattern of patterns) {
       if (pattern === 'default') continue; // Skip default, use as fallback
       if (modelLower.includes(pattern.toLowerCase())) {
         pricing = dbCosts[pattern];
+        matched = true;
         break;
+      }
+    }
+    // Fallback: match by model family (e.g. "sonnet", "opus", "haiku", "gpt-5")
+    // This handles version bumps like claude-sonnet-4-6 when only 4-5 is in settings
+    if (!matched) {
+      const familyPatterns = ['opus', 'sonnet', 'haiku', 'gpt-5.2', 'gpt-5.1', 'gpt-5'];
+      for (const family of familyPatterns) {
+        if (modelLower.includes(family)) {
+          // Find the first settings entry that also contains this family name
+          for (const pattern of patterns) {
+            if (pattern.toLowerCase().includes(family)) {
+              pricing = dbCosts[pattern];
+              matched = true;
+              break;
+            }
+          }
+          if (matched) break;
+        }
       }
     }
     // Check for Ollama/local models (contain ':' indicating a tag)
@@ -1449,7 +1469,7 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
       }
     }
     // Use default if no match found and pricing wasn't set
-    if (pricing.input === 1.00 && pricing.output === 3.00 && dbCosts['default']) {
+    if (!matched && dbCosts['default']) {
       pricing = dbCosts['default'];
     }
   } else {

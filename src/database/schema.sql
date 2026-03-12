@@ -90,9 +90,15 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     -- OpenAI GPT-5
     ('cost_gpt-5_input', '1.25'),
     ('cost_gpt-5_output', '10.00'),
+    -- Anthropic Opus 4.6
+    ('cost_claude-opus-4-6_input', '5.00'),
+    ('cost_claude-opus-4-6_output', '25.00'),
     -- Anthropic Opus 4.5
     ('cost_claude-opus-4-5_input', '5.00'),
     ('cost_claude-opus-4-5_output', '25.00'),
+    -- Anthropic Sonnet 4.6
+    ('cost_claude-sonnet-4-6_input', '3.00'),
+    ('cost_claude-sonnet-4-6_output', '15.00'),
     -- Anthropic Sonnet 4.5
     ('cost_claude-sonnet-4-5_input', '3.00'),
     ('cost_claude-sonnet-4-5_output', '15.00'),

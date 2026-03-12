@@ -21,6 +21,7 @@ class DatabaseManager {
     this._saveTimer = null;
     this._saveIntervalMs = 1000; // Throttle saves to once per second
     this._pendingSave = false;
+    this._lastSaveMs = 0; // Track when we last saved, for cross-process merge
   }
 
   /**
@@ -64,13 +65,49 @@ class DatabaseManager {
   }
 
   /**
-   * Save database to disk immediately
+   * Save database to disk immediately.
+   * Merges settings from disk first if another process (e.g. dashboard) wrote since our last save.
    */
   save() {
+    this._mergeExternalSettings();
     const data = this.db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(this.dbPath, buffer);
     this._pendingSave = false;
+    this._lastSaveMs = Date.now();
+  }
+
+  /**
+   * Merge settings from the on-disk database if another process modified it
+   * since our last save. Only the settings table is merged (using updated_at
+   * to keep the newer value), so metrics/messages written by this process are safe.
+   */
+  _mergeExternalSettings() {
+    if (!this._lastSaveMs || !fs.existsSync(this.dbPath)) return;
+    try {
+      const stat = fs.statSync(this.dbPath);
+      if (stat.mtimeMs <= this._lastSaveMs) return; // No external changes
+
+      const buffer = fs.readFileSync(this.dbPath);
+      const diskDb = new this.SQL.Database(buffer);
+      const stmt = diskDb.prepare('SELECT key, value, updated_at FROM settings');
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        // Upsert: keep whichever version has the later updated_at
+        const upsert = this.db.prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+           WHERE settings.updated_at < excluded.updated_at`
+        );
+        upsert.run([row.key, row.value, row.updated_at]);
+        upsert.free();
+      }
+      stmt.free();
+      diskDb.close();
+    } catch (err) {
+      // Non-fatal — worst case we overwrite settings, which is the old behaviour
+      console.error('⚠️ Settings merge failed:', err.message);
+    }
   }
 
   /**
@@ -886,6 +923,7 @@ class DatabaseManager {
           ELSE user_email
         END as domain,
         SUM(input_tokens + cache_creation_tokens) as input_tokens,
+        SUM(cache_read_tokens) as cache_read_tokens,
         SUM(output_tokens) as output_tokens,
         SUM(cost) as cost
       FROM request_metrics
