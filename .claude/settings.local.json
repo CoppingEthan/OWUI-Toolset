@@ -5,7 +5,15 @@
       "Bash(git ls-tree:*)",
       "Bash(git grep:*)",
       "Bash(node -e:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(xargs wc:*)",
+      "Bash(npm install:*)",
+      "Bash(npm audit:*)",
+      "Bash(timeout 10 node src/api/server.js)",
+      "Bash(timeout 8 node src/dashboard/server.js)",
+      "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(''''anthropic-sdk:'''',JSON.parse\\(d\\).version\\)\\)\")",
+      "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(''''openai:'''',JSON.parse\\(d\\).version\\)\\)\")",
+      "Bash(timeout 8 node src/api/server.js)"
     ]
   }
 }

@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import DatabaseManager from '../database/database.js';
 import { isMultimodalContent } from '../transformers/message-transformer.js';
-import { detectImageType, compressForLLM } from '../utils/image-compressor.js';
+import { detectImageType, compressForLLM, compressImage } from '../utils/image-compressor.js';
 import { extractContent } from '../cee/index.js';
 // Native tool calling (replaces DIY text-based parsing)
 import { chatCompletion } from '../tools/providers/index.js';
