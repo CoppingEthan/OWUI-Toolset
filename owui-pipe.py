@@ -25,43 +25,43 @@ class Pipe:
         )
 
         # Tool Calling LLM (for requests that may use tools)
-        TOOL_CALLING_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
-            default="anthropic",
+        TOOL_CALLING_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
+            default="llama-server",
             description="Provider for tool-calling requests",
         )
         TOOL_CALLING_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-6",
-            description="Any model name for the selected provider (e.g. claude-sonnet-4-5, gpt-5.2, llama3.1:8b)",
+            default="gpt-oss-20b",
+            description="Model name for the selected provider (e.g. gpt-oss-20b, claude-sonnet-4-6)",
         )
 
         # Conversational LLM (for simple chat without tools)
-        CONVERSATIONAL_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
-            default="anthropic",
+        CONVERSATIONAL_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
+            default="llama-server",
             description="Provider for simple chat (no tools)",
         )
         CONVERSATIONAL_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-6",
-            description="Any model name for the selected provider (e.g. gpt-5.2, claude-haiku-4-5, llama3.1:8b)",
+            default="gpt-oss-20b",
+            description="Model name for the selected provider (e.g. gpt-oss-20b, claude-sonnet-4-6)",
         )
 
         # Compaction LLM (for summarizing long conversations)
-        COMPACTION_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
-            default="anthropic",
+        COMPACTION_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
+            default="llama-server",
             description="Provider for conversation compaction (use a fast, cheap model)",
         )
         COMPACTION_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-6",
-            description="Model for compaction (e.g. claude-haiku-4-5, gpt-5, llama3.1:8b)",
+            default="gpt-oss-20b",
+            description="Model for compaction (e.g. gpt-oss-20b, claude-haiku-4-5)",
         )
         ENABLE_COMPACTION: bool = Field(
             default=True,
             description="Enable automatic conversation compaction for long sessions",
         )
 
-        # API Keys
-        ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key")
-        OPENAI_API_KEY: str = Field(default="", description="OpenAI API key")
-        OLLAMA_BASE_URL: str = Field(default="http://localhost:11434", description="Ollama base URL")
+        # API Keys & Endpoints
+        ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key (required for escalation and vision)")
+        LLAMA_SERVER_URL: str = Field(default="http://localhost:8080", description="llama-server URL (local LLM)")
+        ANTHROPIC_EXPERT_MODEL: str = Field(default="claude-sonnet-4-6", description="Model used when escalating to expert")
         TAVILY_API_KEY: str = Field(default="", description="Tavily API key for tools")
 
         # External Services
@@ -150,8 +150,8 @@ class Pipe:
                 "llm_model": model,
                 "use_tools": use_tools,
                 "anthropic_api_key": self.valves.ANTHROPIC_API_KEY,
-                "openai_api_key": self.valves.OPENAI_API_KEY,
-                "ollama_base_url": self.valves.OLLAMA_BASE_URL,
+                "llama_server_url": self.valves.LLAMA_SERVER_URL,
+                "anthropic_expert_model": self.valves.ANTHROPIC_EXPERT_MODEL,
                 "tavily_api_key": self.valves.TAVILY_API_KEY,
                 "docling_base_url": self.valves.DOCLING_BASE_URL,
                 "comfyui_base_url": self.valves.COMFYUI_BASE_URL,

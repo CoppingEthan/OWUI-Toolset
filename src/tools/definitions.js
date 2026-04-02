@@ -1,7 +1,7 @@
 /**
  * Unified Tool Definitions
  * Master definitions for all tools in provider-agnostic format
- * Exported functions transform to OpenAI, Anthropic, and Ollama formats
+ * Exported functions transform to OpenAI Chat Completions and Anthropic formats
  */
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -499,6 +499,68 @@ INPUT: Dates as ISO 8601 strings (e.g. "2019-04-03", "2023-06-21T14:30:00") or n
       },
       required: ['from', 'to']
     }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Escalation & Vision Tools (llama-server only)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  escalate_to_expert: {
+    name: 'escalate_to_expert',
+    description:
+      'Escalate a task to a more powerful expert AI model (Claude Sonnet 4.6). ' +
+      'You MUST escalate for:\n' +
+      '- ANY task where the user says your answer is wrong, incorrect, or inadequate — escalate immediately, do not retry yourself\n' +
+      '- Precise numerical computation (large factorials, exact probabilities, combinatorics)\n' +
+      '- Complex coding tasks (multi-file refactoring, architectural decisions, debugging intricate issues)\n' +
+      '- Advanced data analysis, mathematical proofs, or formal reasoning\n' +
+      '- Tasks requiring deep domain expertise (legal, medical, scientific)\n' +
+      '- Image/vision analysis (you cannot see images — always escalate when image analysis is needed)\n' +
+      '- Complex creative writing requiring nuanced style\n' +
+      '- Any task where you are uncertain about correctness\n' +
+      '- Any task the user explicitly asks you to escalate\n\n' +
+      'Do NOT escalate for:\n' +
+      '- Simple questions, greetings, or basic factual queries\n' +
+      '- Straightforward web searches or lookups\n' +
+      '- Simple code snippets or short explanations\n' +
+      '- File reading, listing, or basic operations\n' +
+      '- Memory and date/time operations\n\n' +
+      'When you escalate, the expert model receives the full conversation context including all ' +
+      'tool results you have already gathered. Gather information first (web searches, file reads) ' +
+      'BEFORE escalating so the expert can focus on the complex part.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'Brief description of what needs to be done by the expert model'
+        },
+        reason: {
+          type: 'string',
+          description: 'Why this task requires the expert model (e.g., "complex multi-file refactoring", "image analysis needed", "advanced mathematical proof")'
+        }
+      },
+      required: ['task', 'reason']
+    }
+  },
+
+  view_image: {
+    name: 'view_image',
+    description:
+      'Retrieve a previously uploaded image for analysis. You cannot see images directly — ' +
+      'this tool retrieves the image metadata and URL. After calling this tool, you should ' +
+      'escalate to the expert model using escalate_to_expert for actual image analysis.\n\n' +
+      'The image context in your system prompt lists all available images with their IDs and filenames.',
+    parameters: {
+      type: 'object',
+      properties: {
+        image_id: {
+          type: 'string',
+          description: 'The image filename or ID from the image context list (e.g., "img-abc123.png")'
+        }
+      },
+      required: ['image_id']
+    }
   }
 };
 
@@ -544,41 +606,6 @@ export function toOpenAIChatCompletionsTools(toolNames, options = {}) {
   });
 }
 
-/**
- * Transform tool definitions to OpenAI Responses API format (FunctionTool)
- * The Responses API uses a flat format with type: 'function' directly
- * @param {Array<string>} toolNames - Array of tool names to include
- * @param {Object} options - Transform options
- * @param {boolean} options.strict - Use strict schema validation (default: true for Responses API)
- * @returns {Array} OpenAI Responses API formatted tools (FunctionTool[])
- */
-export function toOpenAITools(toolNames, options = {}) {
-  const { strict = true } = options;  // Responses API recommends strict: true by default
-
-  return toolNames.map(name => {
-    const def = TOOL_DEFINITIONS[name];
-    if (!def) {
-      throw new Error(`Unknown tool: ${name}`);
-    }
-
-    // FunctionTool format for Responses API
-    const tool = {
-      type: 'function',
-      name: def.name,
-      description: def.description,
-      parameters: def.parameters,
-      strict: strict
-    };
-
-    // For strict mode, must include additionalProperties: false
-    if (strict && !tool.parameters.additionalProperties) {
-      tool.parameters = { ...tool.parameters, additionalProperties: false };
-    }
-
-    return tool;
-  });
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Anthropic Format Transformer
 // ═══════════════════════════════════════════════════════════════════════════
@@ -602,21 +629,6 @@ export function toAnthropicTools(toolNames, options = {}) {
       input_schema: def.parameters
     };
   });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Ollama Format Transformer (OpenAI Chat Completions Compatible)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Transform tool definitions to Ollama format (uses OpenAI Chat Completions format)
- * @param {Array<string>} toolNames - Array of tool names to include
- * @param {Object} options - Transform options
- * @returns {Array} Ollama-formatted tools
- */
-export function toOllamaTools(toolNames, options = {}) {
-  // Ollama uses OpenAI Chat Completions compatible format (not Responses API)
-  return toOpenAIChatCompletionsTools(toolNames, { strict: false });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -702,6 +714,13 @@ export function getEnabledToolNames(config) {
       'date_time_now',
       'date_time_diff'
     );
+  }
+
+  // Escalation & vision tools — only for llama-server provider
+  // Anthropic should NOT have these (prevents infinite escalation loops)
+  if (config.llm_provider === 'llama-server') {
+    enabledTools.push('escalate_to_expert');
+    enabledTools.push('view_image');
   }
 
   return enabledTools;

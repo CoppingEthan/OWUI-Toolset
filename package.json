@@ -11,13 +11,9 @@
     "dashboard:dev": "node --watch src/dashboard/server.js",
     "db:init": "node src/database/init.js",
     "test": "node tests/test-all.js",
-    "test:openai": "node tests/test-openai.js",
     "test:anthropic": "node tests/test-anthropic.js",
-    "test:ollama": "node tests/test-ollama.js",
     "test:tools": "node tests/test-tool-calling.js",
-    "test:native-openai": "node tests/native-tools-openai.js",
     "test:native-anthropic": "node tests/native-tools-anthropic.js",
-    "test:native-ollama": "node tests/native-tools-ollama.js",
     "test:anthropic-mixed": "node tests/test-anthropic-mixed-content.js",
     "test:benchmark": "node tests/benchmark-native-tools.js"
   },
@@ -25,8 +21,7 @@
     "openwebui",
     "llm",
     "anthropic",
-    "openai",
-    "ollama",
+    "llama-server",
     "ai-orchestration",
     "token-tracking"
   ],
@@ -44,10 +39,10 @@
     "markdown-pdf": "^11.0.0",
     "multer": "^2.0.2",
     "music-metadata": "^11.10.6",
-    "ollama": "^0.5.0",
     "openai": "^6.27.0",
     "sharp": "^0.34.5",
     "sql.js": "^1.10.3",
+    "ssh2": "^1.17.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

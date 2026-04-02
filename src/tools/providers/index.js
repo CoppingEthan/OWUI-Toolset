@@ -1,36 +1,30 @@
 /**
  * Unified Provider Router
  *
- * Provides a consistent interface for tool calling across all providers.
- * Automatically routes to the appropriate provider based on configuration.
+ * Routes to the appropriate provider based on configuration.
+ * Two providers: llama-server (local, primary) and Anthropic (cloud, expert/vision).
  */
 
-import * as openai from './openai.js';
+import * as llamaServer from './llama-server.js';
 import * as anthropic from './anthropic.js';
-import * as ollama from './ollama.js';
 
 /**
- * Detect provider from model name or config
+ * Detect provider from config
  * @param {string} model - Model name
  * @param {object} config - Configuration
- * @returns {string} - Provider name: 'openai', 'anthropic', or 'ollama'
+ * @returns {string} - Provider name: 'llama-server' or 'anthropic'
  */
 export function detectProvider(model, config) {
-  // Check if model name starts with known prefixes
-  if (model.startsWith('gpt-') || model.startsWith('o1-') || model.startsWith('o3-')) {
-    return 'openai';
-  }
-  if (model.startsWith('claude-')) {
+  // Explicit provider from pipeline config takes priority
+  if (config.llm_provider) return config.llm_provider;
+
+  // Check if model is a known Anthropic model
+  if (model && model.startsWith('claude-')) {
     return 'anthropic';
   }
 
-  // Check if it's an Ollama model (local models typically don't have provider prefixes)
-  if (config.OLLAMA_BASE_URL || model.includes(':')) {
-    return 'ollama';
-  }
-
-  // Default to OpenAI for unknown models
-  return 'openai';
+  // Default to llama-server
+  return 'llama-server';
 }
 
 /**
@@ -40,22 +34,23 @@ export function detectProvider(model, config) {
  */
 function getProviderModule(provider) {
   switch (provider) {
-    case 'openai':
-      return openai;
+    case 'llama-server':
+      return llamaServer;
     case 'anthropic':
       return anthropic;
-    case 'ollama':
-      return ollama;
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
 }
 
+// Re-export for server.js pre-stream fallback
+export { getProviderModule };
+
 /**
  * Execute chat completion with automatic provider routing
  * @param {object} params
  * @param {string} params.model - Model name
- * @param {string} [params.provider] - Explicit provider name ('openai', 'anthropic', 'ollama'). If omitted, auto-detected from model name.
+ * @param {string} [params.provider] - Explicit provider name. If omitted, auto-detected.
  * @param {array} params.messages - Message history
  * @param {array} params.enabledTools - Array of tool names to enable
  * @param {object} params.config - Configuration
@@ -64,7 +59,6 @@ function getProviderModule(provider) {
  * @param {function} params.onSource - Callback for source citations (OWUI citation format)
  * @param {boolean} params.stream - Enable streaming
  * @param {number} params.maxIterations - Max tool execution iterations
- * @param {boolean} params.strictMode - Use strict schema validation (OpenAI only)
  * @returns {Promise<object>} - Final response
  */
 export async function chatCompletion({
@@ -78,8 +72,7 @@ export async function chatCompletion({
   onToolOutput,
   onSource,
   stream = false,
-  maxIterations = 5,
-  strictMode = false
+  maxIterations = 15
 }) {
   const provider = explicitProvider || detectProvider(model, config);
   const providerModule = getProviderModule(provider);
@@ -94,7 +87,6 @@ export async function chatCompletion({
     onToolOutput,
     onSource,
     maxIterations,
-    ...(provider === 'openai' && { strictMode })
   };
 
   if (stream) {
@@ -117,30 +109,21 @@ export function formatToolCallDisplay(toolCall, provider) {
 
 /**
  * Get suggested models for a provider
- * Note: Users can specify ANY model - these are just common examples
  * @param {string} provider - Provider name
  * @param {object} config - Configuration
- * @returns {Promise<array>} - List of suggested model names
+ * @returns {Promise<array>} - List of model names
  */
 export async function getAvailableModels(provider, config) {
   switch (provider) {
-    case 'openai':
-      return [
-        'gpt-5',
-        'gpt-5.1',
-        'gpt-5.2'
-      ];
+    case 'llama-server':
+      return llamaServer.getToolCapableModels(config);
 
     case 'anthropic':
       return [
         'claude-opus-4-5',
-        'claude-sonnet-4-5',
+        'claude-sonnet-4-6',
         'claude-haiku-4-5'
       ];
-
-    case 'ollama':
-      // For Ollama, try to fetch actual installed models
-      return ollama.getToolCapableModels(config);
 
     default:
       return [];
