@@ -10,12 +10,7 @@
     "dashboard": "node src/dashboard/server.js",
     "dashboard:dev": "node --watch src/dashboard/server.js",
     "db:init": "node src/database/init.js",
-    "test": "node tests/test-all.js",
-    "test:anthropic": "node tests/test-anthropic.js",
-    "test:tools": "node tests/test-tool-calling.js",
-    "test:native-anthropic": "node tests/native-tools-anthropic.js",
-    "test:anthropic-mixed": "node tests/test-anthropic-mixed-content.js",
-    "test:benchmark": "node tests/benchmark-native-tools.js"
+    "test": "node --test tests/test-cost-calculator.js tests/test-format-conversion.js"
   },
   "keywords": [
     "openwebui",

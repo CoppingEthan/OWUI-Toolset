@@ -81,15 +81,6 @@ DELETE FROM settings WHERE key IN (
 -- Default model costs (per 1M tokens in USD) - exact model IDs
 -- Key format: cost_{model_id}_{input|output}
 INSERT OR IGNORE INTO settings (key, value) VALUES
-    -- OpenAI GPT-5.2
-    ('cost_gpt-5.2_input', '1.75'),
-    ('cost_gpt-5.2_output', '14.00'),
-    -- OpenAI GPT-5.1
-    ('cost_gpt-5.1_input', '1.25'),
-    ('cost_gpt-5.1_output', '10.00'),
-    -- OpenAI GPT-5
-    ('cost_gpt-5_input', '1.25'),
-    ('cost_gpt-5_output', '10.00'),
     -- Anthropic Opus 4.6
     ('cost_claude-opus-4-6_input', '5.00'),
     ('cost_claude-opus-4-6_output', '25.00'),
@@ -105,16 +96,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     -- Anthropic Haiku 4.5
     ('cost_claude-haiku-4-5_input', '1.00'),
     ('cost_claude-haiku-4-5_output', '5.00'),
-    -- Ollama/Local models (free)
-    ('cost_ollama_input', '0.00'),
-    ('cost_ollama_output', '0.00'),
     -- Cache pricing multipliers (relative to base input price)
     -- Anthropic: read=0.1x (90% discount), write=1.25x (25% premium for 5min TTL)
-    -- OpenAI: read=0.1x (90% discount), write=1.0x (free)
     ('cache_read_multiplier_anthropic', '0.1'),
-    ('cache_write_multiplier_anthropic', '1.25'),
-    ('cache_read_multiplier_openai', '0.1'),
-    ('cache_write_multiplier_openai', '1.0');
+    ('cache_write_multiplier_anthropic', '1.25');
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_request_metrics_timestamp ON request_metrics(timestamp DESC);

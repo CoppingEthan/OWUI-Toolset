@@ -1117,7 +1117,7 @@ class DatabaseManager {
 
   /**
    * Set a model cost
-   * @param {string} pattern - Model pattern (e.g., 'gpt-5', 'sonnet', 'ollama')
+   * @param {string} pattern - Model pattern (e.g., 'sonnet', 'claude-sonnet-4-6')
    * @param {number} inputCost - Input cost per 1M tokens
    * @param {number} outputCost - Output cost per 1M tokens
    */
@@ -1135,10 +1135,6 @@ class DatabaseManager {
       anthropic: {
         read: parseFloat(this.getSetting('cache_read_multiplier_anthropic')) || 0.1,
         write: parseFloat(this.getSetting('cache_write_multiplier_anthropic')) || 1.25
-      },
-      openai: {
-        read: parseFloat(this.getSetting('cache_read_multiplier_openai')) || 0.1,
-        write: parseFloat(this.getSetting('cache_write_multiplier_openai')) || 1.0
       }
     };
   }

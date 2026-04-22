@@ -20,6 +20,7 @@ import { extractContent } from '../cee/index.js';
 // Native tool calling (replaces DIY text-based parsing)
 import { chatCompletion, getProviderModule } from '../tools/providers/index.js';
 import LlamaServerManager from '../utils/llama-manager.js';
+import { calculateCost as calculateCostPure } from '../utils/cost-calculator.js';
 import { getEnabledToolNames } from '../tools/definitions.js';
 import { logSection, logMessages, log } from '../utils/debug-logger.js';
 import { containerManager } from '../tools/sandbox/manager.js';
@@ -1503,131 +1504,17 @@ function getCacheMultipliersFromDB() {
   }
 }
 
-/**
- * Calculate cost based on model and token usage including cache tokens
- * Pricing per 1M tokens - reads from database settings, falls back to defaults
- *
- * Cache pricing is read from database settings (configurable via dashboard).
- * Defaults: Anthropic cache_read=0.1x, cache_write=1.25x; OpenAI cache_read=0.1x, cache_write=1.0x
- *
- * Note: For OpenAI, input_tokens INCLUDES cached tokens, so we subtract them
- *       For Anthropic, input_tokens EXCLUDES cached tokens (separate fields)
- */
 function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, cacheCreationTokens = 0, provider = null) {
-  const modelLower = model.toLowerCase();
-  const dbCosts = getModelCostsFromDB();
-
-  // Handle escalation combo strings like "gpt-oss-20b → claude-sonnet-4-6"
-  if (modelLower.includes('→')) {
-    const parts = model.split('→').map(s => s.trim());
-    // Local model is free; price only the Anthropic portion
-    const apiModel = parts[parts.length - 1];
-    return calculateCost(apiModel, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, 'anthropic');
-  }
-
-  // llama-server / local models are free
-  if (modelLower.includes('gpt-oss') || modelLower.includes('llama-server')) {
-    return 0;
-  }
-
-  // Determine provider from model if not specified
-  if (!provider) {
-    if (modelLower.includes('claude') || modelLower.includes('opus') ||
-        modelLower.includes('sonnet') || modelLower.includes('haiku')) {
-      provider = 'anthropic';
-    } else if (modelLower.includes('gpt')) {
-      provider = 'openai';
-    } else {
-      provider = 'llama-server';
-    }
-  }
-
-  // Local providers are free
-  if (provider === 'llama-server') return 0;
-
-  // Cache pricing multipliers from database (falls back to defaults)
-  const dbMultipliers = getCacheMultipliersFromDB();
-  const providerMultipliers = dbMultipliers && dbMultipliers[provider];
-  const cacheReadMultiplier = providerMultipliers ? providerMultipliers.read : (provider === 'anthropic' ? 0.1 : 0.1);
-  const cacheWriteMultiplier = providerMultipliers ? providerMultipliers.write : (provider === 'anthropic' ? 1.25 : 1.0);
-
-  // For OpenAI, input_tokens includes cached tokens - subtract them for regular pricing
-  // For Anthropic, input_tokens is separate from cache tokens
-  const regularInputTokens = provider === 'openai'
-    ? Math.max(0, inputTokens - cacheReadTokens)
-    : inputTokens;
-
-  // Find base pricing
-  let pricing = { input: 1.00, output: 3.00 };
-
-  if (dbCosts) {
-    // Check patterns in priority order (most specific first)
-    const patterns = Object.keys(dbCosts).sort((a, b) => b.length - a.length);
-    let matched = false;
-    for (const pattern of patterns) {
-      if (pattern === 'default') continue; // Skip default, use as fallback
-      if (modelLower.includes(pattern.toLowerCase())) {
-        pricing = dbCosts[pattern];
-        matched = true;
-        break;
-      }
-    }
-    // Fallback: match by model family (e.g. "sonnet", "opus", "haiku", "gpt-5")
-    // This handles version bumps like claude-sonnet-4-6 when only 4-5 is in settings
-    if (!matched) {
-      const familyPatterns = ['opus', 'sonnet', 'haiku', 'gpt-5.2', 'gpt-5.1', 'gpt-5'];
-      for (const family of familyPatterns) {
-        if (modelLower.includes(family)) {
-          // Find the first settings entry that also contains this family name
-          for (const pattern of patterns) {
-            if (pattern.toLowerCase().includes(family)) {
-              pricing = dbCosts[pattern];
-              matched = true;
-              break;
-            }
-          }
-          if (matched) break;
-        }
-      }
-    }
-    // Check for local models (contain ':' indicating a tag, or other local patterns)
-    if (modelLower.includes(':')) {
-      if (dbCosts['local'] || dbCosts['ollama']) {
-        pricing = dbCosts['local'] || dbCosts['ollama'];
-      } else {
-        return 0; // Local models are free
-      }
-    }
-    // Use default if no match found and pricing wasn't set
-    if (!matched && dbCosts['default']) {
-      pricing = dbCosts['default'];
-    }
-  } else {
-    // Hardcoded fallback if database not available
-    if (modelLower.includes(':') || modelLower.startsWith('llama') || modelLower.startsWith('mistral')) {
-      pricing = { input: 0, output: 0 };
-    } else if (modelLower.includes('opus')) {
-      pricing = { input: 5.00, output: 25.00 };
-    } else if (modelLower.includes('sonnet')) {
-      pricing = { input: 3.00, output: 15.00 };
-    } else if (modelLower.includes('haiku')) {
-      pricing = { input: 1.00, output: 5.00 };
-    } else if (modelLower.includes('gpt-5.2')) {
-      pricing = { input: 1.75, output: 14.00 };
-    } else if (modelLower.includes('gpt-5')) {
-      pricing = { input: 1.25, output: 10.00 };
-    }
-  }
-
-  // Calculate costs
-  const regularInputCost = (regularInputTokens / 1_000_000) * pricing.input;
-  const outputCost = (outputTokens / 1_000_000) * pricing.output;
-
-  // Cache costs (relative to base input price)
-  const cacheReadCost = (cacheReadTokens / 1_000_000) * pricing.input * cacheReadMultiplier;
-  const cacheWriteCost = (cacheCreationTokens / 1_000_000) * pricing.input * cacheWriteMultiplier;
-
-  return regularInputCost + outputCost + cacheReadCost + cacheWriteCost;
+  return calculateCostPure({
+    model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    provider,
+    dbCosts: getModelCostsFromDB(),
+    cacheMultipliers: getCacheMultipliersFromDB(),
+  });
 }
 
 /**

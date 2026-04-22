@@ -9,6 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import DatabaseManager from '../database/database.js';
+import { calculateCost } from '../utils/cost-calculator.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -561,64 +562,24 @@ app.post('/api/settings/recalculate-costs', authenticate, (req, res) => {
       return res.status(400).json({ error: 'No model costs configured' });
     }
 
-    // Build sorted patterns for matching (longest first)
-    const patterns = Object.keys(costs).sort((a, b) => b.length - a.length);
-    // Family fallbacks for version-agnostic matching
-    const familyPatterns = ['opus', 'sonnet', 'haiku', 'gpt-5.2', 'gpt-5.1', 'gpt-5'];
-
-    function calcCost(model, provider, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens) {
-      const modelLower = model.toLowerCase();
-
-      const cacheReadMul = multipliers?.[provider]?.read ?? (provider === 'anthropic' ? 0.1 : 0.1);
-      const cacheWriteMul = multipliers?.[provider]?.write ?? (provider === 'anthropic' ? 1.25 : 1.0);
-
-      const regularInputTokens = provider === 'openai'
-        ? Math.max(0, inputTokens - cacheReadTokens)
-        : inputTokens;
-
-      // Exact match
-      let pricing = null;
-      for (const pattern of patterns) {
-        if (pattern === 'default') continue;
-        if (modelLower.includes(pattern.toLowerCase())) {
-          pricing = costs[pattern];
-          break;
-        }
-      }
-      // Family fallback
-      if (!pricing) {
-        for (const family of familyPatterns) {
-          if (modelLower.includes(family)) {
-            for (const pattern of patterns) {
-              if (pattern.toLowerCase().includes(family)) {
-                pricing = costs[pattern];
-                break;
-              }
-            }
-            if (pricing) break;
-          }
-        }
-      }
-      // Ollama
-      if (modelLower.includes(':')) {
-        pricing = costs['ollama'] || { input: 0, output: 0 };
-      }
-      if (!pricing) pricing = costs['default'] || { input: 1.00, output: 3.00 };
-
-      return (regularInputTokens / 1e6) * pricing.input
-        + (outputTokens / 1e6) * pricing.output
-        + (cacheReadTokens / 1e6) * pricing.input * cacheReadMul
-        + (cacheCreationTokens / 1e6) * pricing.input * cacheWriteMul;
-    }
-
-    // Read all requests and recalculate
+    // Read all requests and recalculate using the shared cost calculator.
+    // Passing the pre-fetched dbCosts/cacheMultipliers keeps the per-row call pure.
     const rows = db.db.prepare(
       'SELECT id, model, provider, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens FROM request_metrics'
     );
     const updates = [];
     while (rows.step()) {
       const r = rows.getAsObject();
-      const newCost = calcCost(r.model, r.provider, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_creation_tokens);
+      const newCost = calculateCost({
+        model: r.model,
+        provider: r.provider,
+        inputTokens: r.input_tokens,
+        outputTokens: r.output_tokens,
+        cacheReadTokens: r.cache_read_tokens,
+        cacheCreationTokens: r.cache_creation_tokens,
+        dbCosts: costs,
+        cacheMultipliers: multipliers,
+      });
       updates.push({ id: r.id, cost: newCost });
     }
     rows.free();
