@@ -16,7 +16,39 @@
  *   LLAMA_START_CMD   - Full command to start llama-server
  */
 
+import { spawn } from 'node:child_process';
 import { Client } from 'ssh2';
+
+/**
+ * curl-based health probe.
+ *
+ * Background: we've observed that Node's HTTP client (both `fetch`/undici and
+ * the plain `http` module) can't reliably talk to llama.cpp's httplib server
+ * from inside this LXC — every request times out with a socket hang up after
+ * 2 seconds, while `curl` from the same host works fine. Something about Node's
+ * HTTP/1.1 handshake and llama.cpp's single-header-file HTTP implementation
+ * doesn't get along in this network environment. Shelling out to curl is ugly
+ * but it works where Node doesn't.
+ */
+function httpHealthProbe(urlStr, timeoutMs) {
+  return new Promise((resolve) => {
+    const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const proc = spawn('curl', [
+      '-sS',
+      '--max-time', String(timeoutSec),
+      '-o', '/dev/null',
+      '-w', '%{http_code}',
+      urlStr,
+    ], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.on('close', () => {
+      const code = parseInt(out.trim(), 10);
+      resolve(Number.isFinite(code) && code >= 200 && code < 300);
+    });
+    proc.on('error', () => resolve(false));
+  });
+}
 
 class LlamaServerManager {
   constructor(config) {
@@ -39,18 +71,13 @@ class LlamaServerManager {
   }
 
   /**
-   * Check if llama-server is running and responsive
+   * Check if llama-server is running and responsive.
+   * Uses plain node:http (not undici/fetch) to avoid the intermittent
+   * timeout we hit talking to llama.cpp's httplib server from this host.
    * @returns {Promise<boolean>}
    */
   async isHealthy() {
-    try {
-      const response = await fetch(`${this.baseUrl}/health`, {
-        signal: AbortSignal.timeout(2000)
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
+    return httpHealthProbe(`${this.baseUrl}/health`, 2000);
   }
 
   /**
@@ -163,8 +190,8 @@ class LlamaServerManager {
       // Launch in background, redirect output to log file
       await this._sshExec('nohup /root/start-llama.sh > /tmp/llama-server.log 2>&1 &', 5000);
 
-      // Wait for it to become healthy (model loading takes 5-10s)
-      await this.waitForHealthy(60000);
+      // Wait for it to become healthy — model loading typically takes 60-90s
+      await this.waitForHealthy(120000);
       this.restarting = false;
       console.log('✅ llama-server is healthy again');
     } catch (err) {

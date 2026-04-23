@@ -24,35 +24,24 @@ class Pipe:
             description="API key for authenticating with the toolset server",
         )
 
-        # Tool Calling LLM (for requests that may use tools)
-        TOOL_CALLING_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
+        # Main LLM — used for chat, tool-calling, and conversation compaction.
+        # Keep this fast and cheap; escalation below handles anything it struggles with.
+        MAIN_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
             default="llama-server",
-            description="Provider for tool-calling requests",
+            description="Provider for the main LLM (handles chat, tools, and compaction)",
         )
-        TOOL_CALLING_LLM_MODEL: str = Field(
+        MAIN_LLM_MODEL: str = Field(
             default="gpt-oss-20b",
-            description="Model name for the selected provider (e.g. gpt-oss-20b, claude-sonnet-4-6)",
+            description="Main LLM model (e.g. gpt-oss-20b, claude-haiku-4-5)",
         )
 
-        # Conversational LLM (for simple chat without tools)
-        CONVERSATIONAL_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
-            default="llama-server",
-            description="Provider for simple chat (no tools)",
-        )
-        CONVERSATIONAL_LLM_MODEL: str = Field(
-            default="gpt-oss-20b",
-            description="Model name for the selected provider (e.g. gpt-oss-20b, claude-sonnet-4-6)",
+        # Escalation LLM — always Anthropic. Called when the main model hits its
+        # limits (hard reasoning, vision, or an explicit escalate_to_expert tool call).
+        ESCALATION_MODEL: str = Field(
+            default="claude-sonnet-4-6",
+            description="Anthropic model used for escalation (e.g. claude-sonnet-4-6, claude-opus-4-7)",
         )
 
-        # Compaction LLM (for summarizing long conversations)
-        COMPACTION_LLM_PROVIDER: Literal["llama-server", "anthropic"] = Field(
-            default="llama-server",
-            description="Provider for conversation compaction (use a fast, cheap model)",
-        )
-        COMPACTION_LLM_MODEL: str = Field(
-            default="gpt-oss-20b",
-            description="Model for compaction (e.g. gpt-oss-20b, claude-haiku-4-5)",
-        )
         ENABLE_COMPACTION: bool = Field(
             default=True,
             description="Enable automatic conversation compaction for long sessions",
@@ -61,7 +50,6 @@ class Pipe:
         # API Keys & Endpoints
         ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key (required for escalation and vision)")
         LLAMA_SERVER_URL: str = Field(default="http://localhost:8080", description="llama-server URL (local LLM)")
-        ANTHROPIC_EXPERT_MODEL: str = Field(default="claude-sonnet-4-6", description="Model used when escalating to expert")
         TAVILY_API_KEY: str = Field(default="", description="Tavily API key for tools")
 
         # External Services
@@ -134,10 +122,10 @@ class Pipe:
         if not self.valves.TOOLSET_API_KEY:
             return "Error: TOOLSET_API_KEY not configured"
 
-        # Select LLM based on tools availability
+        # One main LLM handles chat, tool-calling, and compaction.
+        # Escalation to Anthropic happens server-side when the model calls escalate_to_expert
+        # (or when vision / deeper reasoning is needed).
         use_tools = self._has_tools_enabled()
-        provider = self.valves.TOOL_CALLING_LLM_PROVIDER if use_tools else self.valves.CONVERSATIONAL_LLM_PROVIDER
-        model = self.valves.TOOL_CALLING_LLM_MODEL if use_tools else self.valves.CONVERSATIONAL_LLM_MODEL
 
         payload = {
             **body,
@@ -146,19 +134,19 @@ class Pipe:
             "owui_instance": (__metadata__ or {}).get("interface", "open-webui"),
             "files": __files__ or [],
             "config": {
-                "llm_provider": provider,
-                "llm_model": model,
+                "llm_provider": self.valves.MAIN_LLM_PROVIDER,
+                "llm_model": self.valves.MAIN_LLM_MODEL,
                 "use_tools": use_tools,
                 "anthropic_api_key": self.valves.ANTHROPIC_API_KEY,
                 "llama_server_url": self.valves.LLAMA_SERVER_URL,
-                "anthropic_expert_model": self.valves.ANTHROPIC_EXPERT_MODEL,
+                "anthropic_expert_model": self.valves.ESCALATION_MODEL,
                 "tavily_api_key": self.valves.TAVILY_API_KEY,
                 "docling_base_url": self.valves.DOCLING_BASE_URL,
                 "comfyui_base_url": self.valves.COMFYUI_BASE_URL,
                 "toolset_api_url": self.valves.TOOLSET_API_URL,
                 "custom_system_prompt": self.valves.CUSTOM_SYSTEM_PROMPT,
-                "compaction_provider": self.valves.COMPACTION_LLM_PROVIDER,
-                "compaction_model": self.valves.COMPACTION_LLM_MODEL,
+                "compaction_provider": self.valves.MAIN_LLM_PROVIDER,
+                "compaction_model": self.valves.MAIN_LLM_MODEL,
                 "enable_compaction": self.valves.ENABLE_COMPACTION,
                 "file_recall_instance_id": self.valves.FILE_RECALL_INSTANCE_ID,
                 "tools": {

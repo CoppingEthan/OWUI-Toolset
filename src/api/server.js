@@ -2,8 +2,8 @@
  * OWUI Toolset V2 - Main API Server
  *
  * Local-first architecture with two LLM providers:
- * - llama-server: gpt-oss-20b via OpenAI-compatible API (primary, local)
- * - Anthropic: Claude Sonnet 4.6 (expert escalation + vision)
+ * - llama-server: local GGUF model via OpenAI-compatible API (primary)
+ * - Anthropic: Claude Sonnet (expert escalation + vision)
  */
 
 import express from 'express';
@@ -32,7 +32,7 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 
 // Default models per provider (used only when no model specified in config)
 const DEFAULT_MODELS = {
-  'llama-server': 'gpt-oss-20b',
+  'llama-server': 'qwen3.6-35b-a3b',
   anthropic: 'claude-sonnet-4-6'
 };
 
@@ -1096,6 +1096,43 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         }
       }, 15000);
 
+      // Pre-flight: if llama-server is the provider, check it's up quickly.
+      // We give it 10s max to respond — if not ready, we switch the provider to
+      // Anthropic immediately rather than waiting. Reliability over speed: a 15s
+      // Anthropic response beats a 120s llama-server wait every time.
+      if (llmProvider === 'llama-server' && process.env.LLAMA_SERVER_URL) {
+        const mgr = new LlamaServerManager({
+          LLAMA_SERVER_URL: process.env.LLAMA_SERVER_URL,
+          LLAMA_SSH_HOST: process.env.LLAMA_SSH_HOST,
+          LLAMA_SSH_PORT: process.env.LLAMA_SSH_PORT,
+          LLAMA_SSH_USER: process.env.LLAMA_SSH_USER,
+          LLAMA_SSH_PASSWORD: process.env.LLAMA_SSH_PASSWORD,
+          LLAMA_START_CMD: process.env.LLAMA_START_CMD,
+        });
+        const isUp = await mgr.isHealthy();
+        if (!isUp) {
+          console.log('⚠️ [PRE-FLIGHT] llama-server not responding — giving it 10s then falling back to Anthropic');
+          sendSSEEvent(res, 'status', { data: { description: '⏳ Local model warming up…', done: false } });
+          const cameUp = await Promise.race([
+            mgr.waitForHealthy(10000).then(() => true).catch(() => false),
+            new Promise(resolve => setTimeout(() => resolve(false), 10000)),
+          ]);
+          if (cameUp) {
+            console.log('✅ [PRE-FLIGHT] llama-server is now healthy');
+            sendSSEEvent(res, 'status', { data: { description: '✅ Local model ready', done: true } });
+          } else {
+            console.log('⚠️ [PRE-FLIGHT] llama-server not ready after 10s — switching to Anthropic');
+            sendSSEEvent(res, 'status', { data: { description: '⚠️ Local model unavailable — using Claude', done: false } });
+            llmProvider = 'anthropic';
+            model = anthropicExpertModel || 'claude-sonnet-4-6';
+            modelUsed = model;
+            enabledToolNames = enabledToolNames.filter(t => t !== 'escalate_to_expert' && t !== 'view_image');
+          }
+        } else {
+          console.log('✅ [PRE-FLIGHT] llama-server healthy');
+        }
+      }
+
       try {
         const response = await chatCompletion({
           model,
@@ -1212,9 +1249,18 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         cleanupTempProxies();
 
       } catch (llmError) {
-        // Pre-stream fallback: if llama-server fails before streaming starts, fall back to Anthropic
-        if (llmProvider === 'llama-server' && !assistantResponse) {
-          console.log('🔄 llama-server failed, falling back to Anthropic:', llmError.message);
+        // Fall back to Anthropic on ANY llama-server error — pre-stream, mid-stream,
+        // parse error, timeout, anything. If we have partial output already, it stays
+        // visible to the user and Anthropic continues the response with a clear break.
+        if (llmProvider === 'llama-server') {
+          const partial = assistantResponse.length > 0;
+          console.log(`🔄 llama-server failed${partial ? ' mid-stream' : ''}, falling back to Anthropic:`, llmError.message);
+          sendSSEEvent(res, 'status', { data: { description: partial
+            ? `⚠️ Local model stopped mid-response — continuing with Claude...`
+            : `⚠️ Local model unavailable — switching to Claude...`, done: false } });
+          if (partial) {
+            sendChunk(`\n\n---\n*Switching to Claude to continue...*\n\n`);
+          }
           try {
             llmProvider = 'anthropic';
             model = anthropicExpertModel || 'claude-sonnet-4-6';
@@ -1824,7 +1870,9 @@ app.get('/:user_email/:folder_id/volume/*', (req, res) => {
 const server = app.listen(PORT, HOST, async () => {
   console.log(`\n✅ OWUI Toolset V2 API Server running on http://${HOST}:${PORT}\n`);
 
-  // Auto-start llama-server if SSH is configured and it's not already running
+  // Check llama-server health in the background — don't block the server from accepting requests.
+  // Previously this awaited mgr.start() which blocked for 60-120s on every service restart,
+  // causing all requests during that window to timeout and fall back to Anthropic.
   if (process.env.LLAMA_SSH_HOST && process.env.LLAMA_SSH_PASSWORD && process.env.LLAMA_START_CMD) {
     const mgr = new LlamaServerManager({
       LLAMA_SERVER_URL: process.env.LLAMA_SERVER_URL || 'http://localhost:8080',
@@ -1834,13 +1882,14 @@ const server = app.listen(PORT, HOST, async () => {
       LLAMA_SSH_PASSWORD: process.env.LLAMA_SSH_PASSWORD,
       LLAMA_START_CMD: process.env.LLAMA_START_CMD,
     });
-    const healthy = await mgr.isHealthy();
-    if (!healthy) {
-      console.log('🔄 llama-server is not running — starting via SSH...');
-      await mgr.start();
-    } else {
-      console.log('✅ llama-server is already healthy');
-    }
+    mgr.isHealthy().then(healthy => {
+      if (!healthy) {
+        console.log('🔄 llama-server is not running — starting via SSH (background)...');
+        mgr.start().catch(err => console.error('❌ Failed to start llama-server:', err.message));
+      } else {
+        console.log('✅ llama-server is already healthy');
+      }
+    }).catch(err => console.error('❌ llama-server health check failed:', err.message));
   }
 });
 

@@ -39,8 +39,11 @@ export function calculateCost({
     });
   }
 
-  // Local models are free
-  if (modelLower.includes('gpt-oss') || modelLower.includes('llama-server')) {
+  // Local models are free (anything served by llama-server — qwen, gpt-oss, llama, etc.)
+  if (modelLower.includes('gpt-oss') ||
+      modelLower.includes('qwen') ||
+      modelLower.includes('llama-server') ||
+      modelLower.includes('llama')) {
     return 0;
   }
 
