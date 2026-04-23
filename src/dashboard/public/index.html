@@ -607,7 +607,7 @@
             color: var(--accent-purple);
         }
 
-        .model-badge.openai {
+        .model-badge.llama-server {
             background: rgba(16, 185, 129, 0.2);
             color: var(--accent-green);
         }
@@ -1339,13 +1339,14 @@
                     </tbody>
                 </table>
                 <div class="add-cost-row">
-                    <input type="text" id="newCostPattern" placeholder="Pattern (e.g., gpt-5)">
+                    <input type="text" id="newCostPattern" placeholder="Pattern (e.g., sonnet)">
                     <input type="number" id="newCostInput" placeholder="Input" step="0.01" min="0">
                     <input type="number" id="newCostOutput" placeholder="Output" step="0.01" min="0">
                     <button class="add-cost-btn" onclick="addCost()">Add</button>
                 </div>
                 <p class="cost-help">
-                    Use exact model IDs (e.g., "gpt-5.2", "claude-sonnet-4-6") or patterns. Use "ollama" for local models.
+                    Use exact model IDs (e.g., "claude-sonnet-4-6") or family patterns (e.g., "sonnet").
+                    Local models (gpt-oss, llama-server) are free and don't need entries.
                     Longer patterns take priority over shorter ones.
                 </p>
                 <button class="save-costs-btn" onclick="recalculateCosts()" id="recalcBtn" style="margin-top: 8px; background: #f59e0b;">
@@ -1469,10 +1470,8 @@
             'claude-sonnet-4-6': 'Sonnet 4.6',
             'claude-sonnet-4-5': 'Sonnet 4.5',
             'claude-haiku-4-5': 'Haiku 4.5',
-            'gpt-5': 'GPT-5',
-            'gpt-5.1': 'GPT-5.1',
-            'gpt-5.2': 'GPT-5.2',
-            'ollama': 'Ollama (Local)'
+            'qwen3.6-35b-a3b': 'Qwen3.6-35B-A3B (Local)',
+            'gpt-oss-20b': 'gpt-oss-20b (Local)'
         };
 
         // Time bucket configuration
@@ -2311,7 +2310,7 @@
                 } else if (item.type === 'assistant') {
                     const content = truncate(item.data.content, 100);
                     const modelLabel = MODEL_LABELS[item.request.model] || item.request.model;
-                    const modelClass = item.request.model.includes('claude') ? 'anthropic' : 'openai';
+                    const modelClass = item.request.model.includes('claude') ? 'anthropic' : 'llama-server';
                     return `
                         <div class="request-card assistant-message" onclick="toggleTimelineDetails('${uniqueId}', event)">
                             <div class="request-card-header">

@@ -1,10 +1,9 @@
 /**
  * OWUI Toolset V2 - Main API Server
  *
- * Supports multiple LLM providers with unified message transformation:
- * - OpenAI: GPT-5, GPT-5.1, GPT-5.2
- * - Anthropic: Claude Opus 4.5, Sonnet 4.5, Haiku 4.5
- * - Ollama (local models via Chat API)
+ * Local-first architecture with two LLM providers:
+ * - llama-server: local GGUF model via OpenAI-compatible API (primary)
+ * - Anthropic: Claude Sonnet (expert escalation + vision)
  */
 
 import express from 'express';
@@ -19,7 +18,9 @@ import { isMultimodalContent } from '../transformers/message-transformer.js';
 import { detectImageType, compressForLLM, compressImage } from '../utils/image-compressor.js';
 import { extractContent } from '../cee/index.js';
 // Native tool calling (replaces DIY text-based parsing)
-import { chatCompletion } from '../tools/providers/index.js';
+import { chatCompletion, getProviderModule } from '../tools/providers/index.js';
+import LlamaServerManager from '../utils/llama-manager.js';
+import { calculateCost as calculateCostPure } from '../utils/cost-calculator.js';
 import { getEnabledToolNames } from '../tools/definitions.js';
 import { logSection, logMessages, log } from '../utils/debug-logger.js';
 import { containerManager } from '../tools/sandbox/manager.js';
@@ -31,9 +32,8 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 
 // Default models per provider (used only when no model specified in config)
 const DEFAULT_MODELS = {
-  openai: 'gpt-5.2',
-  anthropic: 'claude-sonnet-4-5',
-  ollama: 'llama3.1:8b'
+  'llama-server': 'qwen3.6-35b-a3b',
+  anthropic: 'claude-sonnet-4-6'
 };
 
 dotenv.config();
@@ -367,7 +367,7 @@ async function handleFileUpload(req, res) {
 
 /**
  * Main Chat Endpoint
- * Supports: GPT-5/5.1/5.2 (OpenAI), Claude Opus/Sonnet/Haiku 4.5 (Anthropic), Ollama (local)
+ * Supports: llama-server (local gpt-oss-20b) and Anthropic (expert escalation + vision)
  */
 app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (req, res) => {
   const startTime = Date.now();
@@ -757,25 +757,22 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     // Get LLM configuration from OWUI Valves
     // New format: llm_provider/llm_model with use_tools flag
     // Legacy format: conversational_llm_provider/tool_calling_llm_provider
-    const llmProvider = (config.llm_provider || config.conversational_llm_provider || 'anthropic').toLowerCase();
+    let llmProvider = (config.llm_provider || config.conversational_llm_provider || 'llama-server').toLowerCase();
     const llmModel = config.llm_model || null;  // May be null, resolved below
     const useTools = config.use_tools !== false;  // Default to true for backwards compatibility
 
-    const openaiKey = config.openai_api_key;
     const anthropicKey = config.anthropic_api_key;
-    const ollamaUrl = config.ollama_base_url || 'http://localhost:11434';
+    const llamaServerUrl = config.llama_server_url;
+    const anthropicExpertModel = config.anthropic_expert_model;
 
     console.log(`💬 Chat: ${user_email || 'unknown'} | ${messages.length} msgs | provider=${llmProvider} | tools=${useTools} | stream=${stream}`);
 
     // Validate the selected provider has required credentials
-    if (llmProvider === 'openai' && (!openaiKey || openaiKey.length === 0)) {
-      return res.status(400).json({ error: 'OpenAI selected but OPENAI_API_KEY not configured in Valves.' });
+    if (llmProvider === 'llama-server' && !llamaServerUrl) {
+      return res.status(400).json({ error: 'llama-server selected but LLAMA_SERVER_URL not configured in Valves.' });
     }
     if (llmProvider === 'anthropic' && (!anthropicKey || anthropicKey.length === 0)) {
       return res.status(400).json({ error: 'Anthropic selected but ANTHROPIC_API_KEY not configured in Valves.' });
-    }
-    if (llmProvider === 'ollama' && (!ollamaUrl || ollamaUrl.length === 0)) {
-      return res.status(400).json({ error: 'Ollama selected but OLLAMA_BASE_URL not configured in Valves.' });
     }
 
     const responseId = `chatcmpl-${Date.now()}`;
@@ -791,7 +788,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
 
     // Get enabled tools using native tool definitions
     // Only enable tools if useTools flag is true (from pipeline decision)
-    const enabledToolNames = useTools ? getEnabledToolNames(config) : [];
+    let enabledToolNames = useTools ? getEnabledToolNames(config) : [];
     console.log(`🔧 Tools enabled: ${enabledToolNames.join(', ') || 'none'} (useTools=${useTools})`);
 
     // Add custom system prompt if configured
@@ -837,6 +834,31 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         systemMsg.content += sandboxNote;
       } else {
         processedMessages.unshift({ role: 'system', content: sandboxNote.trim() });
+      }
+    }
+
+    // Inject escalation guidance when using llama-server (local model needs hints)
+    if (llmProvider === 'llama-server') {
+      const escalationNote = '\n\n[ESCALATION GUIDANCE]\n' +
+        'You are a capable local AI assistant. You handle most tasks directly — simple questions, web searches, ' +
+        'basic coding, lookups, and everyday requests are yours to handle.\n\n' +
+        'You have an escalate_to_expert tool that hands tasks to Claude Sonnet 4.6, a much more powerful model. ' +
+        'ESCALATION RULES:\n' +
+        '1. If the user says your answer is WRONG or asks you to try again — escalate immediately. Do NOT retry yourself.\n' +
+        '2. If a task needs precise computation (large numbers, exact probabilities, combinatorics) — escalate.\n' +
+        '3. If you are unsure about correctness — escalate rather than guessing.\n' +
+        '4. If the user explicitly asks you to escalate — do it immediately.\n' +
+        '5. For complex multi-step coding, deep analysis, or formal proofs — escalate.\n' +
+        '6. You CANNOT see images. Use view_image to retrieve image metadata, then escalate_to_expert for analysis.\n\n' +
+        'Before escalating, gather relevant context first (web searches, file reads) so the expert has everything it needs. ' +
+        'The expert sees your full conversation including all tool results.\n' +
+        '[/ESCALATION GUIDANCE]';
+
+      const systemMsg = processedMessages.find(m => m.role === 'system');
+      if (systemMsg) {
+        systemMsg.content += escalationNote;
+      } else {
+        processedMessages.unshift({ role: 'system', content: escalationNote.trim() });
       }
     }
 
@@ -894,9 +916,10 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     // Build config for native tool calling
     const publicDomain = process.env.PUBLIC_DOMAIN || `http://localhost:${PORT}`;
     const toolConfig = {
-      OPENAI_API_KEY: config.openai_api_key,
       ANTHROPIC_API_KEY: config.anthropic_api_key,
-      OLLAMA_BASE_URL: config.ollama_base_url || 'http://localhost:11434',
+      LLAMA_SERVER_URL: config.llama_server_url,
+      ANTHROPIC_EXPERT_MODEL: config.anthropic_expert_model || 'claude-sonnet-4-6',
+      llm_provider: llmProvider,
       tavily_api_key: config.tavily_api_key,
       comfyui_base_url: config.comfyui_base_url,
       ANTHROPIC_MAX_TOKENS: parseInt(process.env.ANTHROPIC_MAX_TOKENS || '8192', 10),
@@ -911,7 +934,15 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
       // Database instance for memory/file recall tools
       db: db,
       // File recall instance ID
-      file_recall_instance_id: config.file_recall_instance_id
+      file_recall_instance_id: config.file_recall_instance_id,
+      // Available images for view_image tool
+      availableImages: availableImages || [],
+      // SSH config for llama-server VRAM coordination (from process.env)
+      LLAMA_SSH_HOST: process.env.LLAMA_SSH_HOST,
+      LLAMA_SSH_PORT: process.env.LLAMA_SSH_PORT,
+      LLAMA_SSH_USER: process.env.LLAMA_SSH_USER,
+      LLAMA_SSH_PASSWORD: process.env.LLAMA_SSH_PASSWORD,
+      LLAMA_START_CMD: process.env.LLAMA_START_CMD,
     };
 
     // For streaming: set up SSE headers early so we can send status events during compaction
@@ -1030,6 +1061,24 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     // Enforce input token limit (trim old messages if over budget) — safety net
     processedMessages = trimMessagesToTokenLimit(processedMessages, MAX_INPUT_TOKENS, enabledToolNames.length);
 
+    // Auto-route vision requests to Anthropic (gpt-oss has no vision)
+    if (llmProvider === 'llama-server') {
+      const lastMsg = processedMessages[processedMessages.length - 1];
+      const hasImages = Array.isArray(lastMsg?.content) &&
+        lastMsg.content.some(b => b.type === 'image_url');
+
+      if (hasImages) {
+        console.log('🔄 Auto-routing to Anthropic: images detected, llama-server has no vision');
+        llmProvider = 'anthropic';
+        model = anthropicExpertModel || 'claude-sonnet-4-6';
+        modelUsed = model;
+        // Remove llama-server-only tools for Anthropic
+        enabledToolNames = enabledToolNames.filter(
+          t => t !== 'escalate_to_expert' && t !== 'view_image'
+        );
+      }
+    }
+
     let detailId = 0;
 
     if (stream) {
@@ -1046,6 +1095,43 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           clearInterval(keepAliveInterval);
         }
       }, 15000);
+
+      // Pre-flight: if llama-server is the provider, check it's up quickly.
+      // We give it 10s max to respond — if not ready, we switch the provider to
+      // Anthropic immediately rather than waiting. Reliability over speed: a 15s
+      // Anthropic response beats a 120s llama-server wait every time.
+      if (llmProvider === 'llama-server' && process.env.LLAMA_SERVER_URL) {
+        const mgr = new LlamaServerManager({
+          LLAMA_SERVER_URL: process.env.LLAMA_SERVER_URL,
+          LLAMA_SSH_HOST: process.env.LLAMA_SSH_HOST,
+          LLAMA_SSH_PORT: process.env.LLAMA_SSH_PORT,
+          LLAMA_SSH_USER: process.env.LLAMA_SSH_USER,
+          LLAMA_SSH_PASSWORD: process.env.LLAMA_SSH_PASSWORD,
+          LLAMA_START_CMD: process.env.LLAMA_START_CMD,
+        });
+        const isUp = await mgr.isHealthy();
+        if (!isUp) {
+          console.log('⚠️ [PRE-FLIGHT] llama-server not responding — giving it 10s then falling back to Anthropic');
+          sendSSEEvent(res, 'status', { data: { description: '⏳ Local model warming up…', done: false } });
+          const cameUp = await Promise.race([
+            mgr.waitForHealthy(10000).then(() => true).catch(() => false),
+            new Promise(resolve => setTimeout(() => resolve(false), 10000)),
+          ]);
+          if (cameUp) {
+            console.log('✅ [PRE-FLIGHT] llama-server is now healthy');
+            sendSSEEvent(res, 'status', { data: { description: '✅ Local model ready', done: true } });
+          } else {
+            console.log('⚠️ [PRE-FLIGHT] llama-server not ready after 10s — switching to Anthropic');
+            sendSSEEvent(res, 'status', { data: { description: '⚠️ Local model unavailable — using Claude', done: false } });
+            llmProvider = 'anthropic';
+            model = anthropicExpertModel || 'claude-sonnet-4-6';
+            modelUsed = model;
+            enabledToolNames = enabledToolNames.filter(t => t !== 'escalate_to_expert' && t !== 'view_image');
+          }
+        } else {
+          console.log('✅ [PRE-FLIGHT] llama-server healthy');
+        }
+      }
 
       try {
         const response = await chatCompletion({
@@ -1131,6 +1217,11 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           maxIterations: MAX_TOOL_ITERATIONS
         });
 
+        // Track escalation in metrics
+        if (response.escalated) {
+          modelUsed = `${model} → ${response.escalated_model}`;
+        }
+
         // Update usage stats
         if (response.usage) {
           inputTokens = response.usage.input_tokens || response.usage.prompt_tokens || 0;
@@ -1158,16 +1249,81 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         cleanupTempProxies();
 
       } catch (llmError) {
-        clearInterval(keepAliveInterval);
+        // Fall back to Anthropic on ANY llama-server error — pre-stream, mid-stream,
+        // parse error, timeout, anything. If we have partial output already, it stays
+        // visible to the user and Anthropic continues the response with a clear break.
+        if (llmProvider === 'llama-server') {
+          const partial = assistantResponse.length > 0;
+          console.log(`🔄 llama-server failed${partial ? ' mid-stream' : ''}, falling back to Anthropic:`, llmError.message);
+          sendSSEEvent(res, 'status', { data: { description: partial
+            ? `⚠️ Local model stopped mid-response — continuing with Claude...`
+            : `⚠️ Local model unavailable — switching to Claude...`, done: false } });
+          if (partial) {
+            sendChunk(`\n\n---\n*Switching to Claude to continue...*\n\n`);
+          }
+          try {
+            llmProvider = 'anthropic';
+            model = anthropicExpertModel || 'claude-sonnet-4-6';
+            modelUsed = model;
+            enabledToolNames = enabledToolNames.filter(
+              t => t !== 'escalate_to_expert' && t !== 'view_image'
+            );
 
-        console.error('Native tool calling streaming error:', llmError.message);
-        sendChunk(`\n\n❌ Error: ${llmError.message}\n\n`);
-        sendChunk('', 'stop');
-        res.write('data: [DONE]\n\n');
-        res.end();
+            const fallbackResponse = await chatCompletion({
+              model,
+              provider: 'anthropic',
+              messages: processedMessages,
+              enabledTools: enabledToolNames,
+              config: { ...toolConfig, llm_provider: 'anthropic' },
+              onText: (chunk) => { assistantResponse += chunk; sendChunk(chunk); },
+              onToolCall: (toolCall) => {
+                const toolName = toolCall.name;
+                const toolParams = toolCall.input || toolCall.arguments;
+                const query = toolParams.query || toolParams.urls?.[0] || '';
+                const friendlyDesc = `🔧 ${toolName}: ${query}...`;
+                const paramsJson = JSON.stringify(toolParams, null, 2);
+                const display = `\n\n<details id="__DETAIL_${detailId++}__">\n<summary>${friendlyDesc}</summary>\n\n\`\`\`json\n${paramsJson}\n\`\`\`\n</details>\n\n`;
+                sendChunk(display);
+                if (!toolsUsed.includes(toolName)) toolsUsed.push(toolName);
+              },
+              onToolOutput: (chunk) => { assistantResponse += chunk; sendChunk(chunk); },
+              onSource: (source) => {
+                try { sendSSEEvent(res, 'source', { data: source }); } catch {}
+              },
+              stream: true,
+              maxIterations: MAX_TOOL_ITERATIONS
+            });
 
-        // Cleanup temp proxy images even on error
-        cleanupTempProxies();
+            if (fallbackResponse.usage) {
+              inputTokens = fallbackResponse.usage.input_tokens || fallbackResponse.usage.prompt_tokens || 0;
+              outputTokens = fallbackResponse.usage.output_tokens || fallbackResponse.usage.completion_tokens || 0;
+              cacheCreationTokens = fallbackResponse.usage.cache_creation_input_tokens || 0;
+              cacheReadTokens = fallbackResponse.usage.cache_read_input_tokens || 0;
+            }
+
+            clearInterval(keepAliveInterval);
+            sendChunk('', 'stop');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            cleanupTempProxies();
+          } catch (fallbackError) {
+            clearInterval(keepAliveInterval);
+            console.error('Fallback to Anthropic also failed:', fallbackError.message);
+            sendChunk(`\n\n❌ Error: ${fallbackError.message}\n\n`);
+            sendChunk('', 'stop');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            cleanupTempProxies();
+          }
+        } else {
+          clearInterval(keepAliveInterval);
+          console.error('Native tool calling streaming error:', llmError.message);
+          sendChunk(`\n\n❌ Error: ${llmError.message}\n\n`);
+          sendChunk('', 'stop');
+          res.write('data: [DONE]\n\n');
+          res.end();
+          cleanupTempProxies();
+        }
       }
 
     } else {
@@ -1250,6 +1406,11 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           stream: false,
           maxIterations: MAX_TOOL_ITERATIONS
         });
+
+        // Track escalation in metrics (non-streaming)
+        if (response.escalated) {
+          modelUsed = `${model} → ${response.escalated_model}`;
+        }
 
         // Update usage stats
         if (response.usage) {
@@ -1389,115 +1550,17 @@ function getCacheMultipliersFromDB() {
   }
 }
 
-/**
- * Calculate cost based on model and token usage including cache tokens
- * Pricing per 1M tokens - reads from database settings, falls back to defaults
- *
- * Cache pricing is read from database settings (configurable via dashboard).
- * Defaults: Anthropic cache_read=0.1x, cache_write=1.25x; OpenAI cache_read=0.1x, cache_write=1.0x
- *
- * Note: For OpenAI, input_tokens INCLUDES cached tokens, so we subtract them
- *       For Anthropic, input_tokens EXCLUDES cached tokens (separate fields)
- */
 function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, cacheCreationTokens = 0, provider = null) {
-  const modelLower = model.toLowerCase();
-  const dbCosts = getModelCostsFromDB();
-
-  // Determine provider from model if not specified
-  if (!provider) {
-    if (modelLower.includes('claude') || modelLower.includes('opus') ||
-        modelLower.includes('sonnet') || modelLower.includes('haiku')) {
-      provider = 'anthropic';
-    } else if (modelLower.includes('gpt')) {
-      provider = 'openai';
-    } else {
-      provider = 'ollama';
-    }
-  }
-
-  // Cache pricing multipliers from database (falls back to defaults)
-  const dbMultipliers = getCacheMultipliersFromDB();
-  const providerMultipliers = dbMultipliers && dbMultipliers[provider];
-  const cacheReadMultiplier = providerMultipliers ? providerMultipliers.read : (provider === 'anthropic' ? 0.1 : 0.1);
-  const cacheWriteMultiplier = providerMultipliers ? providerMultipliers.write : (provider === 'anthropic' ? 1.25 : 1.0);
-
-  // For OpenAI, input_tokens includes cached tokens - subtract them for regular pricing
-  // For Anthropic, input_tokens is separate from cache tokens
-  const regularInputTokens = provider === 'openai'
-    ? Math.max(0, inputTokens - cacheReadTokens)
-    : inputTokens;
-
-  // Find base pricing
-  let pricing = { input: 1.00, output: 3.00 };
-
-  if (dbCosts) {
-    // Check patterns in priority order (most specific first)
-    const patterns = Object.keys(dbCosts).sort((a, b) => b.length - a.length);
-    let matched = false;
-    for (const pattern of patterns) {
-      if (pattern === 'default') continue; // Skip default, use as fallback
-      if (modelLower.includes(pattern.toLowerCase())) {
-        pricing = dbCosts[pattern];
-        matched = true;
-        break;
-      }
-    }
-    // Fallback: match by model family (e.g. "sonnet", "opus", "haiku", "gpt-5")
-    // This handles version bumps like claude-sonnet-4-6 when only 4-5 is in settings
-    if (!matched) {
-      const familyPatterns = ['opus', 'sonnet', 'haiku', 'gpt-5.2', 'gpt-5.1', 'gpt-5'];
-      for (const family of familyPatterns) {
-        if (modelLower.includes(family)) {
-          // Find the first settings entry that also contains this family name
-          for (const pattern of patterns) {
-            if (pattern.toLowerCase().includes(family)) {
-              pricing = dbCosts[pattern];
-              matched = true;
-              break;
-            }
-          }
-          if (matched) break;
-        }
-      }
-    }
-    // Check for Ollama/local models (contain ':' indicating a tag)
-    if (modelLower.includes(':')) {
-      if (dbCosts['ollama']) {
-        pricing = dbCosts['ollama'];
-      } else {
-        return 0; // Local models are free
-      }
-    }
-    // Use default if no match found and pricing wasn't set
-    if (!matched && dbCosts['default']) {
-      pricing = dbCosts['default'];
-    }
-  } else {
-    // Hardcoded fallback if database not available
-    if (modelLower.includes(':') || modelLower.startsWith('llama') || modelLower.startsWith('mistral')) {
-      pricing = { input: 0, output: 0 };
-    } else if (modelLower.includes('opus')) {
-      pricing = { input: 5.00, output: 25.00 };
-    } else if (modelLower.includes('sonnet')) {
-      pricing = { input: 3.00, output: 15.00 };
-    } else if (modelLower.includes('haiku')) {
-      pricing = { input: 1.00, output: 5.00 };
-    } else if (modelLower.includes('gpt-5.2')) {
-      pricing = { input: 1.75, output: 14.00 };
-    } else if (modelLower.includes('gpt-5')) {
-      pricing = { input: 1.25, output: 10.00 };
-    }
-  }
-
-  // Calculate costs
-  const regularInputCost = (regularInputTokens / 1_000_000) * pricing.input;
-  const outputCost = (outputTokens / 1_000_000) * pricing.output;
-
-  // Cache costs (relative to base input price)
-  const cacheReadCost = (cacheReadTokens / 1_000_000) * pricing.input * cacheReadMultiplier;
-  const cacheWriteCost = (cacheCreationTokens / 1_000_000) * pricing.input * cacheWriteMultiplier;
-
-  return regularInputCost + outputCost + cacheReadCost + cacheWriteCost;
+  return calculateCostPure({
+    model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    provider,
+    dbCosts: getModelCostsFromDB(),
+    cacheMultipliers: getCacheMultipliersFromDB(),
+  });
 }
 
 /**
@@ -1511,7 +1574,7 @@ function sendSSEEvent(res, eventType, data) {
 /**
  * Maximum tool iterations to prevent infinite loops
  */
-const MAX_TOOL_ITERATIONS = parseInt(process.env.MAX_TOOL_ITERATIONS || '5', 10);
+const MAX_TOOL_ITERATIONS = parseInt(process.env.MAX_TOOL_ITERATIONS || '15', 10);
 
 /**
  * Maximum input tokens allowed per request (0 = unlimited)
@@ -1747,8 +1810,8 @@ async function callCompactionLLM(messagesToSummarize, config) {
   const maxSummaryTokens = parseInt(process.env.COMPACTION_MAX_SUMMARY_TOKENS || '1024', 10);
   const compactionConfig = {
     ANTHROPIC_API_KEY: config.anthropic_api_key,
-    OPENAI_API_KEY: config.openai_api_key,
-    OLLAMA_BASE_URL: config.ollama_base_url || 'http://localhost:11434',
+    LLAMA_SERVER_URL: config.llama_server_url,
+    ANTHROPIC_EXPERT_MODEL: config.anthropic_expert_model,
     ANTHROPIC_MAX_TOKENS: maxSummaryTokens,
   };
 
@@ -1804,8 +1867,30 @@ app.get('/:user_email/:folder_id/volume/*', (req, res) => {
 });
 
 // Start server with extended timeout for long-running tool operations (e.g., ComfyUI)
-const server = app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, async () => {
   console.log(`\n✅ OWUI Toolset V2 API Server running on http://${HOST}:${PORT}\n`);
+
+  // Check llama-server health in the background — don't block the server from accepting requests.
+  // Previously this awaited mgr.start() which blocked for 60-120s on every service restart,
+  // causing all requests during that window to timeout and fall back to Anthropic.
+  if (process.env.LLAMA_SSH_HOST && process.env.LLAMA_SSH_PASSWORD && process.env.LLAMA_START_CMD) {
+    const mgr = new LlamaServerManager({
+      LLAMA_SERVER_URL: process.env.LLAMA_SERVER_URL || 'http://localhost:8080',
+      LLAMA_SSH_HOST: process.env.LLAMA_SSH_HOST,
+      LLAMA_SSH_PORT: process.env.LLAMA_SSH_PORT,
+      LLAMA_SSH_USER: process.env.LLAMA_SSH_USER,
+      LLAMA_SSH_PASSWORD: process.env.LLAMA_SSH_PASSWORD,
+      LLAMA_START_CMD: process.env.LLAMA_START_CMD,
+    });
+    mgr.isHealthy().then(healthy => {
+      if (!healthy) {
+        console.log('🔄 llama-server is not running — starting via SSH (background)...');
+        mgr.start().catch(err => console.error('❌ Failed to start llama-server:', err.message));
+      } else {
+        console.log('✅ llama-server is already healthy');
+      }
+    }).catch(err => console.error('❌ llama-server health check failed:', err.message));
+  }
 });
 
 // Set server timeout to 10 minutes (default is 2 minutes, too short for image generation)

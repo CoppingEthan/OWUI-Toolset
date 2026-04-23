@@ -10,6 +10,7 @@ import * as openaiSync from '../file-recall/openai-sync.js';
 import { formatToolResult } from './prompts.js';
 import { exportToPdf } from '../utils/pdf-exporter.js';
 import { logToolCall } from '../utils/debug-logger.js';
+import LlamaServerManager from '../utils/llama-manager.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -44,15 +45,18 @@ async function executeToolCall(toolName, params, config, callbacks = {}) {
         break;
 
       case 'image_generation':
-        executionResult = await executeImageGeneration(params, config, callbacks);
+        executionResult = await executeWithVRAMCoordination(config,
+          () => executeImageGeneration(params, config, callbacks));
         break;
 
       case 'image_edit':
-        executionResult = await executeImageEdit(params, config, callbacks);
+        executionResult = await executeWithVRAMCoordination(config,
+          () => executeImageEdit(params, config, callbacks));
         break;
 
       case 'image_blend':
-        executionResult = await executeImageBlend(params, config, callbacks);
+        executionResult = await executeWithVRAMCoordination(config,
+          () => executeImageBlend(params, config, callbacks));
         break;
 
       // Sandbox code execution tools
@@ -109,6 +113,22 @@ async function executeToolCall(toolName, params, config, callbacks = {}) {
 
       case 'date_time_diff':
         executionResult = executeDateTimeDiff(params);
+        break;
+
+      // Escalation & vision tools
+      case 'escalate_to_expert':
+        // Handled specially in llama-server provider's tool loop.
+        // If it somehow reaches the executor, return a passthrough message.
+        executionResult = {
+          result: formatToolResult('escalate_to_expert',
+            'Escalation request received. The expert model will now handle this task.'),
+          sources: [],
+          error: null
+        };
+        break;
+
+      case 'view_image':
+        executionResult = executeViewImage(params, config);
         break;
 
       default:
@@ -1727,6 +1747,112 @@ function executeDateTimeDiff(params) {
     sources: [],
     error: null
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// View Image Tool
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Retrieve metadata for a previously uploaded image
+ * @param {object} params - { image_id }
+ * @param {object} config - Configuration with availableImages
+ * @returns {{ result: string, sources: Array, error: string|null, imageUrl?: string, imageFilename?: string }}
+ */
+function executeViewImage(params, config) {
+  const images = config.availableImages || [];
+  const imageId = params.image_id;
+
+  if (!imageId) {
+    return {
+      result: formatToolResult('view_image', 'No image_id provided', true),
+      sources: [],
+      error: 'No image_id provided'
+    };
+  }
+
+  // Search by filename, ID, or partial match
+  const target = images.find(img =>
+    img.filename === imageId ||
+    img.id === imageId ||
+    img.filename?.includes(imageId) ||
+    img.id?.includes(imageId)
+  );
+
+  if (!target) {
+    const available = images.map(img => `${img.filename || img.id}`).join(', ');
+    return {
+      result: formatToolResult('view_image',
+        `Image "${imageId}" not found. Available images: ${available || 'none'}`),
+      sources: [],
+      error: 'Image not found'
+    };
+  }
+
+  return {
+    result: formatToolResult('view_image',
+      `Image found:\n` +
+      `- Filename: ${target.filename}\n` +
+      `- URL: ${target.url}\n` +
+      `- Uploaded: ${target.timestamp || 'unknown'}\n` +
+      `- Size: ${target.size || 'unknown'}\n\n` +
+      `You cannot view images directly. Use escalate_to_expert to have the expert model analyse this image.`),
+    sources: [],
+    error: null,
+    imageUrl: target.url,
+    imageFilename: target.filename
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VRAM Coordination Wrapper
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Wrap a ComfyUI workflow with llama-server stop/start for VRAM coordination.
+ * Stops llama-server before the workflow, restarts (fire-and-forget) after.
+ * During restart, new LLM requests fall back to Anthropic via pre-stream fallback.
+ *
+ * @param {object} config - Configuration with LLAMA_SERVER_URL
+ * @param {function} workflowFn - Async function that runs the ComfyUI workflow
+ * @returns {Promise<*>} - Result from workflowFn
+ */
+async function executeWithVRAMCoordination(config, workflowFn) {
+  const llamaUrl = config.LLAMA_SERVER_URL || config.llama_server_url;
+  if (!llamaUrl) {
+    // No llama-server configured — just run the workflow directly
+    return workflowFn();
+  }
+
+  const llamaManager = new LlamaServerManager(config);
+  const wasRunning = await llamaManager.isHealthy();
+
+  try {
+    // 1. Stop llama-server if it's running to free VRAM
+    if (wasRunning) {
+      await llamaManager.stop();
+    }
+
+    // 2. Execute the ComfyUI workflow
+    const result = await workflowFn();
+
+    // 3. Restart llama-server and wait for it to be healthy.
+    // We await here because the tool loop needs llama-server for the next iteration
+    // (to process the image result and generate a response). The user already waited
+    // ~45s for ComfyUI — another 5-10s for model reload is fine.
+    // New requests from OTHER users during reload still hit pre-stream fallback → Anthropic.
+    if (wasRunning) {
+      await llamaManager.start();
+    }
+
+    return result;
+  } catch (err) {
+    // Restart llama-server even if ComfyUI failed
+    if (wasRunning) {
+      await llamaManager.start();
+    }
+    throw err;
+  }
 }
 
 export {
