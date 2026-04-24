@@ -76,7 +76,7 @@ All organic growth: an early architecture (two processes + many model roles) sta
 - `package.json` / `package-lock.json` — `ollama` dependency removed
 
 ### Integration Test Summary
-All executed against live services (Anthropic API, Tavily, Docling at 10.0.0.26, ComfyUI at 10.0.0.25):
+All executed against live services (Anthropic API, Tavily, Docling, ComfyUI):
 - Anthropic streaming chat ✓
 - Tavily web_search (citations emitted as SSE `source` events) ✓
 - date_time_now tool ✓

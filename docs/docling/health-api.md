@@ -18,7 +18,7 @@ Check if the Docling Serve service is running and healthy.
 **Example:**
 
 ```bash
-curl "http://10.0.0.26:5001/health"
+curl "http://localhost:5001/health"
 ```
 
 **Response Example:**
@@ -45,7 +45,7 @@ Get version information about the Docling Serve instance.
 **Example:**
 
 ```bash
-curl "http://10.0.0.26:5001/version"
+curl "http://localhost:5001/version"
 ```
 
 **Response Example:**
@@ -73,7 +73,7 @@ Returns the OpenAPI 3.0 compatible specification (useful for tools that don't su
 **Example:**
 
 ```bash
-curl "http://10.0.0.26:5001/openapi-3.0.json"
+curl "http://localhost:5001/openapi-3.0.json"
 ```
 
 ---

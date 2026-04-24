@@ -12,7 +12,7 @@ Docling Serve is a document processing and conversion API service that provides 
 ## Base URL
 
 ```
-http://10.0.0.26:5001
+http://localhost:5001
 ```
 
 ## API Endpoints Overview

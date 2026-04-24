@@ -180,7 +180,7 @@ The Hierarchical Chunker:
 ### Chunk from URL with Hybrid Chunker
 
 ```bash
-curl -X POST "http://10.0.0.26:5001/v1/chunk/hybrid/source"   -H "Content-Type: application/json"   -d '{
+curl -X POST "http://localhost:5001/v1/chunk/hybrid/source"   -H "Content-Type: application/json"   -d '{
     "http_sources": [
       {"url": "https://example.com/document.pdf"}
     ],
@@ -194,23 +194,23 @@ curl -X POST "http://10.0.0.26:5001/v1/chunk/hybrid/source"   -H "Content-Type: 
 ### Chunk File with Hierarchical Chunker
 
 ```bash
-curl -X POST "http://10.0.0.26:5001/v1/chunk/hierarchical/file"   -F "files=@/path/to/document.pdf"   -F "chunker_options={"include_metadata": true}"
+curl -X POST "http://localhost:5001/v1/chunk/hierarchical/file"   -F "files=@/path/to/document.pdf"   -F "chunker_options={"include_metadata": true}"
 ```
 
 ### Async Chunking for Large Documents
 
 ```bash
 # Start async chunking
-curl -X POST "http://10.0.0.26:5001/v1/chunk/hybrid/source/async"   -H "Content-Type: application/json"   -d '{
+curl -X POST "http://localhost:5001/v1/chunk/hybrid/source/async"   -H "Content-Type: application/json"   -d '{
     "http_sources": [{"url": "https://example.com/large-document.pdf"}],
     "chunker_options": {"max_tokens": 1024}
   }'
 
 # Poll for status
-curl "http://10.0.0.26:5001/v1/status/poll/{task_id}"
+curl "http://localhost:5001/v1/status/poll/{task_id}"
 
 # Get chunked result
-curl "http://10.0.0.26:5001/v1/result/{task_id}"
+curl "http://localhost:5001/v1/result/{task_id}"
 ```
 
 ## Chunker Options

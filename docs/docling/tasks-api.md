@@ -25,7 +25,7 @@ Check the current status of an async processing task.
 **Example:**
 
 ```bash
-curl "http://10.0.0.26:5001/v1/status/poll/abc123-task-id"
+curl "http://localhost:5001/v1/status/poll/abc123-task-id"
 ```
 
 **Response Example:**
@@ -62,7 +62,7 @@ Retrieve the result of a completed async task.
 **Example:**
 
 ```bash
-curl "http://10.0.0.26:5001/v1/result/abc123-task-id"
+curl "http://localhost:5001/v1/result/abc123-task-id"
 ```
 
 ---
@@ -93,7 +93,7 @@ Clear all converter instances from memory.
 - **200**: Successful Response
 
 ```bash
-curl "http://10.0.0.26:5001/v1/clear/converters"
+curl "http://localhost:5001/v1/clear/converters"
 ```
 
 ---
@@ -114,8 +114,8 @@ Clear stored results from memory.
 
 ```bash
 # Clear all results
-curl "http://10.0.0.26:5001/v1/clear/results"
+curl "http://localhost:5001/v1/clear/results"
 
 # Clear specific task result
-curl "http://10.0.0.26:5001/v1/clear/results?task_id=abc123"
+curl "http://localhost:5001/v1/clear/results?task_id=abc123"
 ```

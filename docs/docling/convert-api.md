@@ -169,7 +169,7 @@ The Convert API allows you to convert documents from various formats into struct
 ### Convert a URL Source
 
 ```bash
-curl -X POST "http://10.0.0.26:5001/v1/convert/source"   -H "Content-Type: application/json"   -d '{
+curl -X POST "http://localhost:5001/v1/convert/source"   -H "Content-Type: application/json"   -d '{
     "http_sources": [
       {"url": "https://example.com/document.pdf"}
     ],
@@ -183,7 +183,7 @@ curl -X POST "http://10.0.0.26:5001/v1/convert/source"   -H "Content-Type: appli
 ### Convert a File Upload
 
 ```bash
-curl -X POST "http://10.0.0.26:5001/v1/convert/file"   -F "files=@/path/to/document.pdf"   -F "options={"to_formats": ["md"]}"
+curl -X POST "http://localhost:5001/v1/convert/file"   -F "files=@/path/to/document.pdf"   -F "options={"to_formats": ["md"]}"
 ```
 
 ### Async Conversion
@@ -192,7 +192,7 @@ For large documents, use async endpoints:
 
 ```bash
 # Start async conversion
-curl -X POST "http://10.0.0.26:5001/v1/convert/source/async"   -H "Content-Type: application/json"   -d '{
+curl -X POST "http://localhost:5001/v1/convert/source/async"   -H "Content-Type: application/json"   -d '{
     "http_sources": [{"url": "https://example.com/large-document.pdf"}]
   }'
 
@@ -200,8 +200,8 @@ curl -X POST "http://10.0.0.26:5001/v1/convert/source/async"   -H "Content-Type:
 # {"task_id": "abc123", "status": "pending"}
 
 # Poll for status
-curl "http://10.0.0.26:5001/v1/status/poll/abc123"
+curl "http://localhost:5001/v1/status/poll/abc123"
 
 # Get result when complete
-curl "http://10.0.0.26:5001/v1/result/abc123"
+curl "http://localhost:5001/v1/result/abc123"
 ```

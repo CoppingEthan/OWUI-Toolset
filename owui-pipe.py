@@ -59,7 +59,7 @@ class Pipe:
         # External tool services ------------------------------------------
         TAVILY_API_KEY: str = Field(default="", description="Tavily API key (web search / scrape / research)")
         DOCLING_BASE_URL: str = Field(default="", description="Docling server URL (PDF/DOCX extraction)")
-        COMFYUI_BASE_URL: str = Field(default="", description="ComfyUI server URL (e.g. http://10.0.0.25:8188)")
+        COMFYUI_BASE_URL: str = Field(default="", description="ComfyUI server URL")
 
         # System prompt add-on --------------------------------------------
         CUSTOM_SYSTEM_PROMPT: str = Field(default="", description="Prepended to the system prompt for this instance")
