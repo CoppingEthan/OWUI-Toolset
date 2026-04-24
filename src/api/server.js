@@ -14,19 +14,15 @@
 
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import DatabaseManager from '../database/database.js';
 import { detectImageType, compressForLLM, compressImage } from '../utils/image-compressor.js';
 import { extractContent } from '../cee/index.js';
-// Native tool calling (replaces DIY text-based parsing)
 import { chatCompletion } from '../tools/providers/index.js';
 import { getEnabledToolNames } from '../tools/definitions.js';
 import { logSection, logMessages, log } from '../utils/debug-logger.js';
-import { containerManager } from '../tools/sandbox/manager.js';
 import { createFileRecallRouter } from '../file-recall/router.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,36 +30,27 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 
 // Default models per provider (used only when the pipeline omits llm_model).
-// The OWUI pipeline always supplies a model, so these are rarely hit.
 const DEFAULT_MODELS = {
   openai: 'gpt-5.2',
   anthropic: 'claude-sonnet-4-6',
 };
 
-dotenv.config();
-
 const DATA_DIR = path.join(projectRoot, 'data');
 const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 
-// Initialize database with absolute path
-const dbPath = process.env.DATABASE_PATH
-  ? path.resolve(projectRoot, process.env.DATABASE_PATH)
-  : path.join(projectRoot, 'data', 'metrics.db');
-console.log(`📁 API DB path: ${dbPath}`);
-const db = new DatabaseManager(dbPath);
-await db.initialize();
+/**
+ * Express app factory. Returns the configured API app ready to listen.
+ * Caller provides a shared DatabaseManager instance.
+ */
+export function createApiApp(db) {
+  const app = express();
+  const PORT = process.env.PORT || 3000;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// Middleware
-app.use(cors({ origin: process.env.ENABLE_CORS === 'true' ? '*' : false }));
+  app.use(cors({ origin: process.env.ENABLE_CORS === 'true' ? '*' : false }));
 
 /**
  * Authentication Middleware
@@ -1786,30 +1773,18 @@ app.get('/:user_email/:folder_id/volume/*', (req, res) => {
 
   console.log(`📥 Serving file: ${resolvedPath}`);
   res.sendFile(resolvedPath);
-});
+  });
 
-// Start server with extended timeout for long-running tool operations (e.g., ComfyUI)
-const server = app.listen(PORT, HOST, () => {
-  console.log(`\n✅ OWUI Toolset V2 API Server running on http://${HOST}:${PORT}\n`);
-});
+  return app;
+}
 
-// Set server timeout to 10 minutes (default is 2 minutes, too short for image generation)
-server.timeout = 600000; // 10 minutes in milliseconds
-server.keepAliveTimeout = 120000; // 2 minutes keep-alive
-server.headersTimeout = 620000; // Slightly longer than timeout
-
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down...');
-
-  // Cleanup sandbox containers
-  try {
-    await containerManager.cleanupAll();
-  } catch (err) {
-    console.error('Error cleaning up containers:', err.message);
-  }
-
-  db.close(); // Flush pending saves and close database
-  process.exit(0);
-});
-
-export default app;
+/**
+ * Apply long-lived server timeouts suitable for image generation and
+ * deep research (each can run for minutes).
+ */
+export function applyServerTimeouts(server) {
+  server.timeout = 600000;          // 10 minutes total request budget
+  server.keepAliveTimeout = 120000; // 2 minutes keep-alive
+  server.headersTimeout = 620000;   // slightly longer than timeout
+  return server;
+}
