@@ -6,27 +6,13 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "dashboard": "node src/dashboard/server.js",
-    "dashboard:dev": "node --watch src/dashboard/server.js",
-    "db:init": "node src/database/init.js",
-    "test": "node tests/test-all.js",
-    "test:openai": "node tests/test-openai.js",
-    "test:anthropic": "node tests/test-anthropic.js",
-    "test:ollama": "node tests/test-ollama.js",
-    "test:tools": "node tests/test-tool-calling.js",
-    "test:native-openai": "node tests/native-tools-openai.js",
-    "test:native-anthropic": "node tests/native-tools-anthropic.js",
-    "test:native-ollama": "node tests/native-tools-ollama.js",
-    "test:anthropic-mixed": "node tests/test-anthropic-mixed-content.js",
-    "test:benchmark": "node tests/benchmark-native-tools.js"
+    "dev": "node --watch src/index.js"
   },
   "keywords": [
     "openwebui",
     "llm",
     "anthropic",
     "openai",
-    "ollama",
     "ai-orchestration",
     "token-tracking"
   ],

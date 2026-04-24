@@ -4,7 +4,7 @@ A multi-provider LLM backend for [Open WebUI](https://github.com/open-webui/open
 
 ## Features
 
-- **Multi-Provider LLM Support** -- OpenAI, Anthropic (Claude), and Ollama with native tool calling via each provider's API
+- **Multi-Provider LLM Support** -- OpenAI and Anthropic (Claude) with native tool calling via each provider's API
 - **Web Search & Deep Research** -- Tavily-powered web search, URL scraping, and multi-query deep research with auto-generated PDF reports
 - **Image Generation** -- Text-to-image, image editing, and image blending via ComfyUI (Flux workflows)
 - **Sandboxed Code Execution** -- Docker-based sandbox with 95+ pre-installed tools (Python, Node.js, FFmpeg, Pandoc, LibreOffice, etc.), resource-limited and network-isolated
@@ -66,7 +66,7 @@ nano /opt/owui-toolset/.env
 | `ALLOW_REMOTE_UPGRADE` | Allow one-click upgrade from dashboard | `false` |
 | `DEBUG_MODE` | Enable verbose debug logging | `false` |
 
-> **Note:** LLM API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`) and tool service URLs (`TAVILY_API_KEY`, `COMFYUI_BASE_URL`) are configured as **pipeline valves** in Open WebUI on `owui-pipe.py`, not in the `.env` file.
+> **Note:** LLM API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) and tool service URLs (`TAVILY_API_KEY`, `COMFYUI_BASE_URL`) are configured as **pipeline valves** in Open WebUI on `owui-pipe.py`, not in the `.env` file.
 
 ## Start
 
