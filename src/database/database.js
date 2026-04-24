@@ -1117,7 +1117,7 @@ class DatabaseManager {
 
   /**
    * Set a model cost
-   * @param {string} pattern - Model pattern (e.g., 'gpt-5', 'sonnet', 'ollama')
+   * @param {string} pattern - Model pattern (e.g., 'gpt-5', 'claude-sonnet-4-6')
    * @param {number} inputCost - Input cost per 1M tokens
    * @param {number} outputCost - Output cost per 1M tokens
    */
@@ -1330,9 +1330,9 @@ class DatabaseManager {
   // ═══════════════════════════════════════════════════════════
 
   /**
-   * Get cached summary for a conversation
+   * Get cached summary for a conversation.
    * @param {string} conversationId
-   * @returns {object|null} - { id, conversation_id, summary, watermark, compaction_count, ... }
+   * @returns {object|null} - { id, conversation_id, summary, watermark, ... }
    */
   getSummary(conversationId) {
     const stmt = this.db.prepare(
@@ -1355,9 +1355,7 @@ class DatabaseManager {
     if (existing) {
       const stmt = this.db.prepare(`
         UPDATE conversation_summaries
-        SET summary = ?, watermark = ?,
-            compaction_count = compaction_count + 1,
-            updated_at = CURRENT_TIMESTAMP
+        SET summary = ?, watermark = ?, updated_at = CURRENT_TIMESTAMP
         WHERE conversation_id = ?
       `);
       stmt.run([summary, watermark, conversationId]);

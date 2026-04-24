@@ -12,7 +12,7 @@
 
 import { containerManager } from './manager.js';
 import { executeWithStreaming } from './executor.js';
-import { formatToolResult } from '../prompts.js';
+import { formatToolResult } from '../../utils/tool-result.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

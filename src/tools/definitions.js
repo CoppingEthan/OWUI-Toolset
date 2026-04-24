@@ -1,7 +1,7 @@
 /**
  * Unified Tool Definitions
  * Master definitions for all tools in provider-agnostic format
- * Exported functions transform to OpenAI, Anthropic, and Ollama formats
+ * Exported functions transform to OpenAI and Anthropic formats
  */
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -503,46 +503,8 @@ INPUT: Dates as ISO 8601 strings (e.g. "2019-04-03", "2023-06-21T14:30:00") or n
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// OpenAI Format Transformers
+// Provider Format Transformers
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Transform tool definitions to OpenAI Chat Completions format
- * Used for legacy Chat Completions API
- * @param {Array<string>} toolNames - Array of tool names to include
- * @param {Object} options - Transform options
- * @param {boolean} options.strict - Use strict schema validation (default: false)
- * @returns {Array} OpenAI Chat Completions formatted tools
- */
-export function toOpenAIChatCompletionsTools(toolNames, options = {}) {
-  const { strict = false } = options;
-
-  return toolNames.map(name => {
-    const def = TOOL_DEFINITIONS[name];
-    if (!def) {
-      throw new Error(`Unknown tool: ${name}`);
-    }
-
-    const tool = {
-      type: 'function',
-      function: {
-        name: def.name,
-        description: def.description,
-        parameters: def.parameters
-      }
-    };
-
-    if (strict) {
-      tool.function.strict = true;
-      // For strict mode, must include additionalProperties: false
-      if (!tool.function.parameters.additionalProperties) {
-        tool.function.parameters.additionalProperties = false;
-      }
-    }
-
-    return tool;
-  });
-}
 
 /**
  * Transform tool definitions to OpenAI Responses API format (FunctionTool)
@@ -602,21 +564,6 @@ export function toAnthropicTools(toolNames, options = {}) {
       input_schema: def.parameters
     };
   });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Ollama Format Transformer (OpenAI Chat Completions Compatible)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Transform tool definitions to Ollama format (uses OpenAI Chat Completions format)
- * @param {Array<string>} toolNames - Array of tool names to include
- * @param {Object} options - Transform options
- * @returns {Array} Ollama-formatted tools
- */
-export function toOllamaTools(toolNames, options = {}) {
-  // Ollama uses OpenAI Chat Completions compatible format (not Responses API)
-  return toOpenAIChatCompletionsTools(toolNames, { strict: false });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

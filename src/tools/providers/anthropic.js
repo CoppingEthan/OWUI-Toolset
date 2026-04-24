@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { toAnthropicTools } from '../definitions.js';
 import { executeToolCall } from '../executor.js';
-import { logRequest, logResponse, logMessages, logError } from '../../utils/debug-logger.js';
+import { logRequest, logResponse, logMessages } from '../../utils/debug-logger.js';
 
 /**
  * Initialize Anthropic client
@@ -632,14 +632,4 @@ export async function chatCompletionStream({
   }
 
   throw new Error(`Tool execution loop exceeded ${maxIterations} iterations`);
-}
-
-/**
- * Format tool call for display in OWUI
- * @param {object} toolCall - Tool call object
- * @returns {string} - Formatted HTML
- */
-export function formatToolCallDisplay(toolCall) {
-  const params = JSON.stringify(toolCall.input, null, 2);
-  return `\n\n<details><summary>🔧 Tool: ${toolCall.name}</summary>\n\`\`\`json\n${params}\n\`\`\`\n</details>\n\n`;
 }

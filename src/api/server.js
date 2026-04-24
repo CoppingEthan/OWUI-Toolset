@@ -1,10 +1,15 @@
 /**
  * OWUI Toolset V2 - Main API Server
  *
- * Supports multiple LLM providers with unified message transformation:
- * - OpenAI: GPT-5, GPT-5.1, GPT-5.2
- * - Anthropic: Claude Opus 4.5, Sonnet 4.5, Haiku 4.5
- * - Ollama (local models via Chat API)
+ * Hosts:
+ *   - POST /api/v1/chat          — streaming chat with tool calling
+ *   - PUT|POST /process          — CEE file extraction for Open WebUI
+ *   - GET  /:email/:id/volume/*  — serves per-conversation files
+ *   - /api/v1/file-recall/*      — document library management
+ *
+ * Supported LLM providers: OpenAI, Anthropic. Adding a new provider only
+ * requires creating src/tools/providers/<name>.js and registering it in
+ * src/tools/providers/index.js.
  */
 
 import express from 'express';
@@ -15,7 +20,6 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import DatabaseManager from '../database/database.js';
-import { isMultimodalContent } from '../transformers/message-transformer.js';
 import { detectImageType, compressForLLM, compressImage } from '../utils/image-compressor.js';
 import { extractContent } from '../cee/index.js';
 // Native tool calling (replaces DIY text-based parsing)
@@ -29,11 +33,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 
-// Default models per provider (used only when no model specified in config)
+// Default models per provider (used only when the pipeline omits llm_model).
+// The OWUI pipeline always supplies a model, so these are rarely hit.
 const DEFAULT_MODELS = {
   openai: 'gpt-5.2',
-  anthropic: 'claude-sonnet-4-5',
-  ollama: 'llama3.1:8b'
+  anthropic: 'claude-sonnet-4-6',
 };
 
 dotenv.config();
@@ -366,8 +370,7 @@ async function handleFileUpload(req, res) {
 
 
 /**
- * Main Chat Endpoint
- * Supports: GPT-5/5.1/5.2 (OpenAI), Claude Opus/Sonnet/Haiku 4.5 (Anthropic), Ollama (local)
+ * Main chat endpoint. Streams SSE events to the caller (the OWUI pipeline).
  */
 app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (req, res) => {
   const startTime = Date.now();
@@ -517,7 +520,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     // Step 2: Process NEW images in last message (save full quality + create temp proxy)
     const newImageProxies = []; // { url, filename, timestamp } for new images this turn
 
-    if (lastMessage && isMultimodalContent(lastMessage.content)) {
+    if (lastMessage && Array.isArray(lastMessage.content)) {
       // Ensure folders exist
       if (!fs.existsSync(imgFolder)) {
         fs.mkdirSync(imgFolder, { recursive: true });
@@ -755,15 +758,12 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     };
 
     // Get LLM configuration from OWUI Valves
-    // New format: llm_provider/llm_model with use_tools flag
-    // Legacy format: conversational_llm_provider/tool_calling_llm_provider
-    const llmProvider = (config.llm_provider || config.conversational_llm_provider || 'anthropic').toLowerCase();
+    const llmProvider = (config.llm_provider || 'anthropic').toLowerCase();
     const llmModel = config.llm_model || null;  // May be null, resolved below
-    const useTools = config.use_tools !== false;  // Default to true for backwards compatibility
+    const useTools = config.use_tools !== false;  // Default to true
 
     const openaiKey = config.openai_api_key;
     const anthropicKey = config.anthropic_api_key;
-    const ollamaUrl = config.ollama_base_url || 'http://localhost:11434';
 
     console.log(`💬 Chat: ${user_email || 'unknown'} | ${messages.length} msgs | provider=${llmProvider} | tools=${useTools} | stream=${stream}`);
 
@@ -773,9 +773,6 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     }
     if (llmProvider === 'anthropic' && (!anthropicKey || anthropicKey.length === 0)) {
       return res.status(400).json({ error: 'Anthropic selected but ANTHROPIC_API_KEY not configured in Valves.' });
-    }
-    if (llmProvider === 'ollama' && (!ollamaUrl || ollamaUrl.length === 0)) {
-      return res.status(400).json({ error: 'Ollama selected but OLLAMA_BASE_URL not configured in Valves.' });
     }
 
     const responseId = `chatcmpl-${Date.now()}`;
@@ -896,7 +893,6 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     const toolConfig = {
       OPENAI_API_KEY: config.openai_api_key,
       ANTHROPIC_API_KEY: config.anthropic_api_key,
-      OLLAMA_BASE_URL: config.ollama_base_url || 'http://localhost:11434',
       tavily_api_key: config.tavily_api_key,
       comfyui_base_url: config.comfyui_base_url,
       ANTHROPIC_MAX_TOKENS: parseInt(process.env.ANTHROPIC_MAX_TOKENS || '8192', 10),
@@ -1408,21 +1404,19 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
     if (modelLower.includes('claude') || modelLower.includes('opus') ||
         modelLower.includes('sonnet') || modelLower.includes('haiku')) {
       provider = 'anthropic';
-    } else if (modelLower.includes('gpt')) {
-      provider = 'openai';
     } else {
-      provider = 'ollama';
+      provider = 'openai';
     }
   }
 
   // Cache pricing multipliers from database (falls back to defaults)
   const dbMultipliers = getCacheMultipliersFromDB();
   const providerMultipliers = dbMultipliers && dbMultipliers[provider];
-  const cacheReadMultiplier = providerMultipliers ? providerMultipliers.read : (provider === 'anthropic' ? 0.1 : 0.1);
+  const cacheReadMultiplier = providerMultipliers ? providerMultipliers.read : 0.1;
   const cacheWriteMultiplier = providerMultipliers ? providerMultipliers.write : (provider === 'anthropic' ? 1.25 : 1.0);
 
-  // For OpenAI, input_tokens includes cached tokens - subtract them for regular pricing
-  // For Anthropic, input_tokens is separate from cache tokens
+  // For OpenAI, input_tokens includes cached tokens - subtract them for regular pricing.
+  // For Anthropic, input_tokens is separate from cache tokens.
   const regularInputTokens = provider === 'openai'
     ? Math.max(0, inputTokens - cacheReadTokens)
     : inputTokens;
@@ -1435,20 +1429,19 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
     const patterns = Object.keys(dbCosts).sort((a, b) => b.length - a.length);
     let matched = false;
     for (const pattern of patterns) {
-      if (pattern === 'default') continue; // Skip default, use as fallback
+      if (pattern === 'default') continue;
       if (modelLower.includes(pattern.toLowerCase())) {
         pricing = dbCosts[pattern];
         matched = true;
         break;
       }
     }
-    // Fallback: match by model family (e.g. "sonnet", "opus", "haiku", "gpt-5")
-    // This handles version bumps like claude-sonnet-4-6 when only 4-5 is in settings
+    // Fallback: match by model family (e.g. "sonnet", "opus", "haiku", "gpt-5").
+    // Handles version bumps like claude-sonnet-4-7 when only 4-6 is in settings.
     if (!matched) {
       const familyPatterns = ['opus', 'sonnet', 'haiku', 'gpt-5.2', 'gpt-5.1', 'gpt-5'];
       for (const family of familyPatterns) {
         if (modelLower.includes(family)) {
-          // Find the first settings entry that also contains this family name
           for (const pattern of patterns) {
             if (pattern.toLowerCase().includes(family)) {
               pricing = dbCosts[pattern];
@@ -1460,23 +1453,12 @@ function calculateCost(model, inputTokens, outputTokens, cacheReadTokens = 0, ca
         }
       }
     }
-    // Check for Ollama/local models (contain ':' indicating a tag)
-    if (modelLower.includes(':')) {
-      if (dbCosts['ollama']) {
-        pricing = dbCosts['ollama'];
-      } else {
-        return 0; // Local models are free
-      }
-    }
-    // Use default if no match found and pricing wasn't set
     if (!matched && dbCosts['default']) {
       pricing = dbCosts['default'];
     }
   } else {
     // Hardcoded fallback if database not available
-    if (modelLower.includes(':') || modelLower.startsWith('llama') || modelLower.startsWith('mistral')) {
-      pricing = { input: 0, output: 0 };
-    } else if (modelLower.includes('opus')) {
+    if (modelLower.includes('opus')) {
       pricing = { input: 5.00, output: 25.00 };
     } else if (modelLower.includes('sonnet')) {
       pricing = { input: 3.00, output: 15.00 };
@@ -1525,6 +1507,11 @@ const MAX_INPUT_TOKENS = parseInt(process.env.MAX_INPUT_TOKENS || '0', 10);
  * Only takes effect when ENABLE_COMPACTION is on and a compaction model is configured in the pipeline.
  */
 const COMPACTION_TOKEN_THRESHOLD = parseInt(process.env.COMPACTION_TOKEN_THRESHOLD || '65536', 10);
+
+/**
+ * Max tokens requested from the compaction LLM when summarising.
+ */
+const COMPACTION_MAX_SUMMARY_TOKENS = parseInt(process.env.COMPACTION_MAX_SUMMARY_TOKENS || '1024', 10);
 
 /**
  * Max tokens for any single user message (0 = disabled).
@@ -1744,12 +1731,10 @@ async function callCompactionLLM(messagesToSummarize, config) {
     }
   ];
 
-  const maxSummaryTokens = parseInt(process.env.COMPACTION_MAX_SUMMARY_TOKENS || '1024', 10);
   const compactionConfig = {
     ANTHROPIC_API_KEY: config.anthropic_api_key,
     OPENAI_API_KEY: config.openai_api_key,
-    OLLAMA_BASE_URL: config.ollama_base_url || 'http://localhost:11434',
-    ANTHROPIC_MAX_TOKENS: maxSummaryTokens,
+    ANTHROPIC_MAX_TOKENS: COMPACTION_MAX_SUMMARY_TOKENS,
   };
 
   let summaryText = '';

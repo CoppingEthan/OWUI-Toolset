@@ -7,7 +7,7 @@ import * as tavily from './tavily.js';
 import * as comfyui from './comfyui.js';
 import * as sandbox from './sandbox/tools.js';
 import * as openaiSync from '../file-recall/openai-sync.js';
-import { formatToolResult } from './prompts.js';
+import { formatToolResult } from '../utils/tool-result.js';
 import { exportToPdf } from '../utils/pdf-exporter.js';
 import { logToolCall } from '../utils/debug-logger.js';
 import fs from 'fs';
