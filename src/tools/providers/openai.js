@@ -74,7 +74,7 @@ function toResponsesInput(messages) {
   return input;
 }
 
-async function runTools(toolCalls, config, { onToolCall, onToolOutput, onSource }) {
+async function runTools(toolCalls, config, { onToolCall, onToolResult, onToolOutput, onSource }) {
   const results = [];
   for (const tc of toolCalls) {
     const args = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments;
@@ -94,11 +94,22 @@ async function runTools(toolCalls, config, { onToolCall, onToolOutput, onSource 
       };
     }
 
+    const t0 = Date.now();
     const exec = await executeToolCall(tc.name, args, config, toolCallbacks);
+    const execMs = Date.now() - t0;
     if (outputStarted) onToolOutput('```\n\n');
 
     if (onSource && exec.sources && exec.sources.length > 0) {
       for (const source of exec.sources) onSource(source);
+    }
+
+    if (onToolResult) {
+      onToolResult({
+        name: tc.name,
+        result: exec.result,
+        error: exec.error,
+        execution_time_ms: execMs,
+      });
     }
 
     results.push({
@@ -121,6 +132,7 @@ export async function streamChat({
   strictMode = false,
   onText,
   onToolCall,
+  onToolResult,
   onToolOutput,
   onSource,
 }) {
@@ -201,7 +213,7 @@ export async function streamChat({
     }
 
     if (toolCalls.length > 0) {
-      const toolResults = await runTools(toolCalls, config, { onToolCall, onToolOutput, onSource });
+      const toolResults = await runTools(toolCalls, config, { onToolCall, onToolResult, onToolOutput, onSource });
       // Subsequent iterations send only the tool outputs; previous_response_id carries context.
       input = toolResults;
       continue;

@@ -165,7 +165,7 @@ function addToolsCacheControl(tools) {
  * Execute a round of tool calls, stream their outputs, emit their
  * sources, return tool_result blocks to feed back into the model.
  */
-async function runTools(toolUseBlocks, config, { onToolCall, onToolOutput, onSource }) {
+async function runTools(toolUseBlocks, config, { onToolCall, onToolResult, onToolOutput, onSource }) {
   const results = [];
   for (const toolUse of toolUseBlocks) {
     if (onToolCall) {
@@ -183,12 +183,23 @@ async function runTools(toolUseBlocks, config, { onToolCall, onToolOutput, onSou
       };
     }
 
+    const t0 = Date.now();
     const exec = await executeToolCall(toolUse.name, toolUse.input, config, toolCallbacks);
+    const execMs = Date.now() - t0;
 
     if (outputStarted) onToolOutput('```\n\n');
 
     if (onSource && exec.sources && exec.sources.length > 0) {
       for (const source of exec.sources) onSource(source);
+    }
+
+    if (onToolResult) {
+      onToolResult({
+        name: toolUse.name,
+        result: exec.result,
+        error: exec.error,
+        execution_time_ms: execMs,
+      });
     }
 
     results.push({
@@ -214,6 +225,7 @@ export async function streamChat({
   maxIterations = 5,
   onText,
   onToolCall,
+  onToolResult,
   onToolOutput,
   onSource,
 }) {
@@ -267,7 +279,7 @@ export async function streamChat({
     if (finalMessage.stop_reason === 'tool_use') {
       conversation.push({ role: 'assistant', content: finalMessage.content });
       const toolUseBlocks = finalMessage.content.filter(b => b.type === 'tool_use');
-      const toolResults = await runTools(toolUseBlocks, config, { onToolCall, onToolOutput, onSource });
+      const toolResults = await runTools(toolUseBlocks, config, { onToolCall, onToolResult, onToolOutput, onSource });
       conversation.push({ role: 'user', content: toolResults });
       continue;
     }

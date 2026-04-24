@@ -999,10 +999,29 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           toolCallRecords.push({
             tool_name: toolName,
             tool_params: toolParams,
-            tool_result: '',
-            success: true,
+            tool_result: null,
+            success: null,
             execution_time_ms: 0,
           });
+        },
+
+        onToolResult: ({ name, result, error, execution_time_ms }) => {
+          // Fill in the most recent matching record whose result is still pending.
+          for (let i = toolCallRecords.length - 1; i >= 0; i--) {
+            const rec = toolCallRecords[i];
+            if (rec.tool_name === name && rec.success === null) {
+              const resultStr = typeof result === 'string'
+                ? result
+                : (result != null ? JSON.stringify(result) : '');
+              rec.tool_result = resultStr.length > 2000
+                ? resultStr.slice(0, 2000) + `... [truncated, ${resultStr.length} chars]`
+                : resultStr;
+              rec.success = !error;
+              rec.error_message = error || null;
+              rec.execution_time_ms = execution_time_ms;
+              break;
+            }
+          }
         },
 
         onToolOutput: (chunk) => {
