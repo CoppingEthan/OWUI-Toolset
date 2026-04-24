@@ -1,6 +1,14 @@
 /**
- * Debug Logger - Captures EVERYTHING for debugging
- * Logs to both console and debug.log file
+ * Debug logger — only active when DEBUG_MODE=true.
+ *
+ * When enabled, verbose request/response/tool payloads land in
+ * debug.log at the project root. The file is truncated on startup and
+ * all calls become no-ops when DEBUG_MODE is off, so the log does not
+ * grow unbounded in production.
+ *
+ * Console messages are always emitted (via console.log / console.error)
+ * regardless — those respect the normal stdout/stderr log rotation of
+ * whatever supervisor started the process.
  */
 
 import fs from 'fs';
@@ -11,83 +19,53 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 
+const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 const LOG_FILE = path.join(projectRoot, 'debug.log');
 
-// Clear log file on startup
-fs.writeFileSync(LOG_FILE, `=== DEBUG LOG STARTED ${new Date().toISOString()} ===\n\n`);
+if (DEBUG_MODE) {
+  fs.writeFileSync(LOG_FILE, `=== DEBUG LOG STARTED ${new Date().toISOString()} ===\n\n`);
+}
 
-/**
- * Log to both console and file
- */
+function writeFile(content) {
+  if (!DEBUG_MODE) return;
+  try { fs.appendFileSync(LOG_FILE, content); } catch {}
+}
+
 export function log(...args) {
+  console.log(...args);
+  if (!DEBUG_MODE) return;
   const timestamp = new Date().toISOString();
   const message = args.map(arg => {
     if (typeof arg === 'object') {
-      try {
-        return JSON.stringify(arg, null, 2);
-      } catch {
-        return String(arg);
-      }
+      try { return JSON.stringify(arg, null, 2); } catch { return String(arg); }
     }
     return String(arg);
   }).join(' ');
-
-  // Console
-  console.log(...args);
-
-  // File
-  fs.appendFileSync(LOG_FILE, `[${timestamp}] ${message}\n`);
+  writeFile(`[${timestamp}] ${message}\n`);
 }
 
-/**
- * Log API request - captures full request payload
- */
 export function logRequest(provider, payload) {
-  const timestamp = new Date().toISOString();
+  console.log(`📤 [${provider.toUpperCase()}] Sending request${DEBUG_MODE ? ' (see debug.log for full payload)' : ''}`);
+  if (!DEBUG_MODE) return;
   const separator = '═'.repeat(80);
-
-  let output = `\n${separator}\n`;
-  output += `[${timestamp}] 📤 API REQUEST TO ${provider.toUpperCase()}\n`;
-  output += `${separator}\n`;
-  output += JSON.stringify(payload, null, 2);
-  output += `\n${separator}\n\n`;
-
-  console.log(`📤 [${provider.toUpperCase()}] Sending request (see debug.log for full payload)`);
-  fs.appendFileSync(LOG_FILE, output);
+  writeFile(`\n${separator}\n[${new Date().toISOString()}] 📤 API REQUEST TO ${provider.toUpperCase()}\n${separator}\n${JSON.stringify(payload, null, 2)}\n${separator}\n\n`);
 }
 
-/**
- * Log API response - captures full response
- */
 export function logResponse(provider, response) {
-  const timestamp = new Date().toISOString();
+  console.log(`📥 [${provider.toUpperCase()}] Received response${DEBUG_MODE ? ' (see debug.log for full payload)' : ''}`);
+  if (!DEBUG_MODE) return;
   const separator = '═'.repeat(80);
-
-  let output = `\n${separator}\n`;
-  output += `[${timestamp}] 📥 API RESPONSE FROM ${provider.toUpperCase()}\n`;
-  output += `${separator}\n`;
-  output += JSON.stringify(response, null, 2);
-  output += `\n${separator}\n\n`;
-
-  console.log(`📥 [${provider.toUpperCase()}] Received response (see debug.log for full payload)`);
-  fs.appendFileSync(LOG_FILE, output);
+  writeFile(`\n${separator}\n[${new Date().toISOString()}] 📥 API RESPONSE FROM ${provider.toUpperCase()}\n${separator}\n${JSON.stringify(response, null, 2)}\n${separator}\n\n`);
 }
 
-/**
- * Log messages array - shows exactly what LLM sees
- */
 export function logMessages(context, messages) {
-  const timestamp = new Date().toISOString();
+  console.log(`💬 [${context}] ${messages.length} messages${DEBUG_MODE ? ' (see debug.log for content)' : ''}`);
+  if (!DEBUG_MODE) return;
   const separator = '─'.repeat(80);
-
-  let output = `\n${separator}\n`;
-  output += `[${timestamp}] 💬 MESSAGES (${context})\n`;
-  output += `${separator}\n`;
-
+  let output = `\n${separator}\n[${new Date().toISOString()}] 💬 MESSAGES (${context})\n${separator}\n`;
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     output += `\n--- Message ${i + 1} (${msg.role}) ---\n`;
-
     if (typeof msg.content === 'string') {
       output += msg.content;
     } else if (Array.isArray(msg.content)) {
@@ -96,18 +74,12 @@ export function logMessages(context, messages) {
           output += `[TEXT]: ${block.text}\n`;
         } else if (block.type === 'image_url') {
           const url = block.image_url?.url || 'NO URL';
-          if (url.startsWith('data:')) {
-            output += `[IMAGE]: data URL (${url.length} chars)\n`;
-          } else {
-            output += `[IMAGE]: ${url}\n`;
-          }
+          output += url.startsWith('data:')
+            ? `[IMAGE]: data URL (${url.length} chars)\n`
+            : `[IMAGE]: ${url}\n`;
         } else if (block.type === 'image') {
-          // Anthropic format
-          if (block.source?.type === 'url') {
-            output += `[IMAGE]: ${block.source.url}\n`;
-          } else if (block.source?.type === 'base64') {
-            output += `[IMAGE]: base64 (${block.source.data?.length || 0} chars)\n`;
-          }
+          if (block.source?.type === 'url')    output += `[IMAGE]: ${block.source.url}\n`;
+          else if (block.source?.type === 'base64') output += `[IMAGE]: base64 (${block.source.data?.length || 0} chars)\n`;
         } else {
           output += `[${block.type}]: ${JSON.stringify(block)}\n`;
         }
@@ -117,78 +89,30 @@ export function logMessages(context, messages) {
     }
     output += '\n';
   }
-
   output += `${separator}\n\n`;
-
-  console.log(`💬 [${context}] ${messages.length} messages (see debug.log for content)`);
-  fs.appendFileSync(LOG_FILE, output);
+  writeFile(output);
 }
 
-/**
- * Log error
- */
-export function logError(context, error) {
-  const timestamp = new Date().toISOString();
-  const output = `[${timestamp}] ❌ ERROR (${context}): ${error.message}\n${error.stack || ''}\n\n`;
-
-  console.error(`❌ [${context}]`, error.message);
-  fs.appendFileSync(LOG_FILE, output);
-}
-
-/**
- * Log a section header
- */
 export function logSection(title) {
-  const timestamp = new Date().toISOString();
-  const separator = '█'.repeat(80);
-  const output = `\n\n${separator}\n[${timestamp}] ${title}\n${separator}\n\n`;
-
   console.log(`\n${'█'.repeat(40)}\n${title}\n${'█'.repeat(40)}`);
-  fs.appendFileSync(LOG_FILE, output);
+  if (!DEBUG_MODE) return;
+  const separator = '█'.repeat(80);
+  writeFile(`\n\n${separator}\n[${new Date().toISOString()}] ${title}\n${separator}\n\n`);
 }
 
-/**
- * Log tool call with parameters and results
- */
 export function logToolCall(toolName, params, result = null, success = true, executionTime = 0) {
-  const timestamp = new Date().toISOString();
+  console.log(`🔧 [TOOL] ${toolName} ${success ? '✅' : '❌'} (${executionTime}ms)${DEBUG_MODE ? ' - see debug.log for details' : ''}`);
+  if (!DEBUG_MODE) return;
   const separator = '─'.repeat(80);
-
-  let output = `\n${separator}\n`;
-  output += `[${timestamp}] 🔧 TOOL CALL: ${toolName}\n`;
-  output += `${separator}\n`;
-
-  // Tool parameters
-  output += `\n📥 Parameters:\n`;
-  output += JSON.stringify(params, null, 2);
-  output += '\n';
-
-  // Tool result (if available)
+  let output = `\n${separator}\n[${new Date().toISOString()}] 🔧 TOOL CALL: ${toolName}\n${separator}\n`;
+  output += `\n📥 Parameters:\n${JSON.stringify(params, null, 2)}\n`;
   if (result !== null) {
-    output += `\n📤 Result:\n`;
-    // Truncate very long results
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-    if (resultStr.length > 5000) {
-      output += resultStr.substring(0, 5000) + `\n... [truncated, ${resultStr.length} chars total]\n`;
-    } else {
-      output += resultStr + '\n';
-    }
+    output += `\n📤 Result:\n`;
+    output += resultStr.length > 5000
+      ? resultStr.substring(0, 5000) + `\n... [truncated, ${resultStr.length} chars total]\n`
+      : resultStr + '\n';
   }
-
-  // Execution stats
-  output += `\n📊 Status: ${success ? '✅ Success' : '❌ Failed'} | Execution Time: ${executionTime}ms\n`;
-  output += `${separator}\n\n`;
-
-  console.log(`🔧 [TOOL] ${toolName} ${success ? '✅' : '❌'} (${executionTime}ms) - see debug.log for details`);
-  fs.appendFileSync(LOG_FILE, output);
+  output += `\n📊 Status: ${success ? '✅ Success' : '❌ Failed'} | Execution Time: ${executionTime}ms\n${separator}\n\n`;
+  writeFile(output);
 }
-
-export default {
-  log,
-  logRequest,
-  logResponse,
-  logMessages,
-  logError,
-  logSection,
-  logToolCall
-};

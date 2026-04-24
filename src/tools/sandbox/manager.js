@@ -294,6 +294,30 @@ class ContainerManager {
   }
 
   /**
+   * Remove stale `sandbox-*` containers left behind by a previous run.
+   * Called from the entry point at startup so restarts don't leak
+   * containers until their chat IDs come around again.
+   */
+  async cleanupOrphans() {
+    try {
+      const out = execSync(`docker ps -a --filter "name=^sandbox-" --format "{{.Names}}"`, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      if (!out) return 0;
+      const names = out.split('\n').filter(Boolean);
+      for (const name of names) {
+        try { execSync(`docker rm -f ${name}`, { stdio: ['pipe', 'pipe', 'pipe'] }); } catch {}
+      }
+      if (names.length > 0) console.log(`🧹 Removed ${names.length} orphan sandbox container(s) from previous run`);
+      return names.length;
+    } catch {
+      // Docker not running or not installed — ignore, sandbox will fail later with a clearer error.
+      return 0;
+    }
+  }
+
+  /**
    * Get container stats (memory, CPU, PIDs, disk)
    * @param {string} chatUid - Chat UID
    * @returns {Promise<object|null>}

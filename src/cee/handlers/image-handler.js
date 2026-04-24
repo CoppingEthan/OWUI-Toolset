@@ -7,58 +7,6 @@ import sharp from 'sharp';
 import { getFileTypeDescription, formatFileSize } from '../../utils/file-type-detector.js';
 
 /**
- * Parse EXIF date string to readable format
- * @param {string} exifDate - EXIF date format (YYYY:MM:DD HH:MM:SS)
- * @returns {string|null}
- */
-function parseExifDate(exifDate) {
-  if (!exifDate) return null;
-
-  try {
-    // EXIF dates are in format "YYYY:MM:DD HH:MM:SS"
-    if (typeof exifDate === 'string') {
-      const cleaned = exifDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
-      const date = new Date(cleaned);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().replace('T', ' ').substring(0, 19);
-      }
-    } else if (exifDate instanceof Date) {
-      return exifDate.toISOString().replace('T', ' ').substring(0, 19);
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return String(exifDate);
-}
-
-/**
- * Format exposure time as fraction
- * @param {number} exposure - Exposure time in seconds
- * @returns {string}
- */
-function formatExposure(exposure) {
-  if (!exposure) return null;
-  if (exposure >= 1) return `${exposure}s`;
-  const denominator = Math.round(1 / exposure);
-  return `1/${denominator}s`;
-}
-
-/**
- * Format GPS coordinates
- * @param {number} coord - Coordinate value
- * @param {string} ref - Reference (N/S or E/W)
- * @returns {string}
- */
-function formatGpsCoord(coord, ref) {
-  if (coord === undefined || coord === null) return null;
-  const absCoord = Math.abs(coord);
-  const degrees = Math.floor(absCoord);
-  const minutes = Math.floor((absCoord - degrees) * 60);
-  const seconds = ((absCoord - degrees - minutes / 60) * 3600).toFixed(2);
-  return `${degrees}° ${minutes}' ${seconds}" ${ref}`;
-}
-
-/**
  * Calculate aspect ratio
  * @param {number} width
  * @param {number} height
@@ -101,8 +49,6 @@ export async function extractImage(fileBuffer, filename, metadata) {
   const fileSize = formatFileSize(fileBuffer.length);
 
   let imageInfo = {};
-  let exifData = {};
-  let gpsData = {};
 
   try {
     // Get image metadata using sharp
@@ -121,21 +67,10 @@ export async function extractImage(fileBuffer, filename, metadata) {
       isProgressive: sharpMeta.isProgressive
     };
 
-    // Extract EXIF data if available
-    if (sharpMeta.exif) {
-      try {
-        // Sharp provides raw EXIF buffer, we need to parse it
-        // For now, we'll use the basic metadata sharp provides
-        // EXIF parsing would require exif-reader package for full details
-      } catch (e) {
-        console.log('EXIF parsing skipped:', e.message);
-      }
-    }
-
-    // Check for ICC profile
-    if (sharpMeta.icc) {
-      imageInfo.hasIccProfile = true;
-    }
+    // Check for ICC profile (Sharp exposes full EXIF as a raw buffer;
+    // parsing it properly requires the exif-reader package, which we
+    // don't currently depend on).
+    if (sharpMeta.icc) imageInfo.hasIccProfile = true;
 
   } catch (error) {
     console.error('Image metadata extraction error:', error.message);
@@ -199,7 +134,6 @@ export async function extractImage(fileBuffer, filename, metadata) {
     md += `\n`;
   }
 
-  // Note about EXIF
   md += `---\n`;
   md += `*Image saved and available for LLM vision analysis*\n`;
   md += `*Processed at ${metadata.timestamp}*\n`;
@@ -214,8 +148,6 @@ export async function extractImage(fileBuffer, filename, metadata) {
       sizeFormatted: fileSize,
       category: 'image',
       image: imageInfo,
-      exif: Object.keys(exifData).length > 0 ? exifData : null,
-      gps: Object.keys(gpsData).length > 0 ? gpsData : null
-    }
+    },
   };
 }

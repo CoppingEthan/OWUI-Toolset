@@ -5,7 +5,7 @@
 
 import { getFileTypeDescription, formatFileSize } from '../../utils/file-type-detector.js';
 
-const DOCLING_URL = process.env.DOCLING_BASE_URL || 'http://10.0.0.26:5001';
+const DOCLING_URL = process.env.DOCLING_BASE_URL || '';
 const DOCLING_TIMEOUT = 600000; // 10 minutes
 
 /**
@@ -18,6 +18,10 @@ const DOCLING_TIMEOUT = 600000; // 10 minutes
 export async function extractWithDocling(fileBuffer, filename, metadata) {
   const fileType = getFileTypeDescription(filename);
   const fileSize = formatFileSize(fileBuffer.length);
+
+  if (!DOCLING_URL) {
+    throw new Error('DOCLING_BASE_URL is not configured — set it in .env to enable PDF/DOCX extraction.');
+  }
 
   let documentContent = '';
   let doclingMetadata = {};

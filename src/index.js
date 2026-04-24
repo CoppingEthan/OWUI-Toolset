@@ -35,6 +35,10 @@ fs.writeFileSync(PID_FILE, String(process.pid));
 
 console.log('\n🚀 OWUI Toolset V2 Starting...\n');
 
+// Reclaim any sandbox containers left behind by a previous run
+// (fire-and-forget — Docker is optional).
+containerManager.cleanupOrphans().catch(() => {});
+
 const apiApp = createApiApp(db);
 const apiServer = apiApp.listen(API_PORT, API_HOST, () => {
   console.log(`🔌 API:       http://${API_HOST}:${API_PORT}`);

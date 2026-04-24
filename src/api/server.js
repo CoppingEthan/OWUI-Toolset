@@ -57,15 +57,18 @@ export function createApiApp(db) {
   app.use(cors({ origin: process.env.ENABLE_CORS === 'true' ? '*' : false }));
 
 /**
- * Authentication Middleware
+ * Authentication Middleware — timing-safe bearer-token compare.
  */
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  const token = authHeader.split(' ')[1];
-  if (token !== process.env.API_SECRET_KEY) {
+  const token = authHeader.slice(7);
+  const expected = process.env.API_SECRET_KEY || '';
+  const a = Buffer.from(token, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return res.status(401).json({ error: 'Invalid API key' });
   }
   next();

@@ -34,6 +34,24 @@ function safeEquals(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+/**
+ * Same-origin enforcement for mutations. Blocks CSRF: modern browsers
+ * always set `Sec-Fetch-Site` for cross-origin requests, so any value
+ * other than 'same-origin' or 'none' (direct navigation) means the
+ * request came from another site's JS or an auto-submitted form.
+ *
+ * Dashboard AJAX uses fetch() from the same origin, which picks up
+ * 'same-origin' automatically.
+ */
+function sameOriginOnly(req, res, next) {
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) return next();
+  const sfs = req.headers['sec-fetch-site'];
+  if (sfs && sfs !== 'same-origin' && sfs !== 'none') {
+    return res.status(403).json({ error: 'Cross-site request blocked' });
+  }
+  return next();
+}
+
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   const queryToken = req.query.token;
@@ -140,6 +158,7 @@ function recalculateHistoricalCosts(db) {
 export function createDashboardApp(db) {
   const app = express();
   app.use(express.json());
+  app.use(sameOriginOnly);
   app.use(express.static(path.join(__dirname, 'public')));
 
   // Health (unauthed)
