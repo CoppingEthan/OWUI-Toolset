@@ -20,7 +20,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { detectImageType, compressForLLM, compressImage } from '../utils/image-compressor.js';
 import { extractContent } from '../cee/index.js';
-import { chatCompletion } from '../tools/providers/index.js';
+import { streamChat } from '../tools/providers/index.js';
 import { getEnabledToolNames } from '../tools/definitions.js';
 import { logSection, logMessages, log } from '../utils/debug-logger.js';
 import { createFileRecallRouter } from '../file-recall/router.js';
@@ -1015,250 +1015,106 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
 
     let detailId = 0;
 
+    // ═══════════════════════════════════════════════════════════
+    // Chat — always runs against the streaming provider API. If the
+    // caller wanted JSON, we buffer and respond once at the end.
+    // ═══════════════════════════════════════════════════════════
+
+    let toolCallsDisplay = '';
+    let keepAliveInterval = null;
     if (stream) {
-      // ═══════════════════════════════════════════════════════════
-      // STREAMING with Native Tool Calling
-      // ═══════════════════════════════════════════════════════════
-
-      // Send SSE keepalive comments every 15s to prevent connection
-      // timeouts during long-running tool execution (e.g. image generation)
-      const keepAliveInterval = setInterval(() => {
-        try {
-          res.write(': keepalive\n\n');
-        } catch {
-          clearInterval(keepAliveInterval);
-        }
+      keepAliveInterval = setInterval(() => {
+        try { res.write(': keepalive\n\n'); } catch { clearInterval(keepAliveInterval); }
       }, 15000);
+    }
 
-      try {
-        const response = await chatCompletion({
-          model,
-          provider: llmProvider,
-          messages: processedMessages,
-          enabledTools: enabledToolNames,
-          config: toolConfig,
+    try {
+      const response = await streamChat({
+        model,
+        provider: llmProvider,
+        messages: processedMessages,
+        enabledTools: enabledToolNames,
+        config: toolConfig,
+        maxIterations: MAX_TOOL_ITERATIONS,
 
-          // Stream text chunks to client
-          onText: (chunk) => {
-            assistantResponse += chunk;
-            sendChunk(chunk);
-          },
+        onText: (chunk) => {
+          assistantResponse += chunk;
+          if (stream) sendChunk(chunk);
+        },
 
-          // Display tool calls in collapsible details
-          onToolCall: (toolCall) => {
-            const toolName = toolCall.name;
-            const toolParams = toolCall.input || toolCall.arguments;
-
-            // Format friendly tool description based on tool type
-            const query = toolParams.query || toolParams.urls?.[0] || '';
-            let friendlyDesc;
-            switch (toolName) {
-              case 'web_search':
-                friendlyDesc = `🌐 Searching: ${query}...`;
-                break;
-              case 'deep_research':
-                friendlyDesc = `🔍 Deep Researching: ${query}...`;
-                break;
-              case 'web_scrape':
-                const urlCount = Array.isArray(toolParams.urls) ? toolParams.urls.length : 1;
-                const urlDisplay = urlCount > 1 ? `${urlCount} URLs` : query;
-                friendlyDesc = `📄 Scraping: ${urlDisplay}...`;
-                break;
-              case 'file_recall_search':
-                friendlyDesc = `📂 Searching documents: ${query}...`;
-                break;
-              default:
-                friendlyDesc = `🔧 ${toolName}: ${query}...`;
+        onToolCall: (toolCall) => {
+          const toolName = toolCall.name;
+          const toolParams = toolCall.input || toolCall.arguments;
+          const query = toolParams.query || toolParams.urls?.[0] || '';
+          let friendlyDesc;
+          switch (toolName) {
+            case 'web_search':
+              friendlyDesc = `🌐 Searching: ${query}...`; break;
+            case 'deep_research':
+              friendlyDesc = `🔍 Deep Researching: ${query}...`; break;
+            case 'web_scrape': {
+              const urlCount = Array.isArray(toolParams.urls) ? toolParams.urls.length : 1;
+              const urlDisplay = urlCount > 1 ? `${urlCount} URLs` : query;
+              friendlyDesc = `📄 Scraping: ${urlDisplay}...`;
+              break;
             }
-
-            // Format tool call display with friendly description
-            // Prepend newlines to ensure separation from any preceding text
-            const paramsJson = JSON.stringify(toolParams, null, 2);
-            const display = `\n\n<details id="__DETAIL_${detailId++}__">\n<summary>${friendlyDesc}</summary>\n\n\`\`\`json\n${paramsJson}\n\`\`\`\n</details>\n\n`;
-            sendChunk(display);
-
-            // Track tool usage
-            if (!toolsUsed.includes(toolName)) {
-              toolsUsed.push(toolName);
-            }
-
-            // Record for database
-            toolCallRecords.push({
-              tool_name: toolName,
-              tool_params: toolParams,
-              tool_result: '', // Will be filled by executor
-              success: true,
-              execution_time_ms: 0
-            });
-          },
-
-          // Stream sandbox console output inside code blocks
-          onToolOutput: (chunk) => {
-            assistantResponse += chunk;
-            sendChunk(chunk);
-          },
-
-          // Emit sources for OWUI citation panel
-          // Pipeline extracts data.data, so wrap source in {data: source}
-          onSource: (source) => {
-            try {
-              JSON.stringify(source);
-              console.log(`📚 Emitting source: ${source.source?.name || source.source?.url || 'unknown'}`);
-              sendSSEEvent(res, 'source', { data: source });
-            } catch (e) {
-              console.error('Failed to serialize source for SSE:', e.message);
-            }
-          },
-
-          stream: true,
-          maxIterations: MAX_TOOL_ITERATIONS
-        });
-
-        // Update usage stats
-        if (response.usage) {
-          inputTokens = response.usage.input_tokens || response.usage.prompt_tokens || 0;
-          outputTokens = response.usage.output_tokens || response.usage.completion_tokens || 0;
-
-          // Anthropic cache tokens
-          cacheCreationTokens = response.usage.cache_creation_input_tokens || 0;
-          cacheReadTokens = response.usage.cache_read_input_tokens || 0;
-
-          // OpenAI cache tokens (nested in prompt_tokens_details)
-          if (response.usage.prompt_tokens_details?.cached_tokens) {
-            cacheReadTokens = response.usage.prompt_tokens_details.cached_tokens;
+            case 'file_recall_search':
+              friendlyDesc = `📂 Searching documents: ${query}...`; break;
+            default:
+              friendlyDesc = `🔧 ${toolName}: ${query}...`;
           }
+          const paramsJson = JSON.stringify(toolParams, null, 2);
+          const display = stream
+            ? `\n\n<details id="__DETAIL_${detailId++}__">\n<summary>${friendlyDesc}</summary>\n\n\`\`\`json\n${paramsJson}\n\`\`\`\n</details>\n\n`
+            : `\n\n<details>\n<summary>${friendlyDesc}</summary>\n\n\`\`\`json\n${paramsJson}\n\`\`\`\n</details>\n\n`;
+          if (stream) sendChunk(display);
+          else toolCallsDisplay += display;
+
+          if (!toolsUsed.includes(toolName)) toolsUsed.push(toolName);
+          toolCallRecords.push({
+            tool_name: toolName,
+            tool_params: toolParams,
+            tool_result: '',
+            success: true,
+            execution_time_ms: 0,
+          });
+        },
+
+        onToolOutput: (chunk) => {
+          assistantResponse += chunk;
+          if (stream) sendChunk(chunk);
+        },
+
+        onSource: (source) => {
+          if (!stream) return; // non-streaming replies don't carry citations
+          try {
+            JSON.stringify(source);
+            console.log(`📚 Emitting source: ${source.source?.name || source.source?.url || 'unknown'}`);
+            sendSSEEvent(res, 'source', { data: source });
+          } catch (e) {
+            console.error('Failed to serialize source for SSE:', e.message);
+          }
+        },
+      });
+
+      if (response.usage) {
+        inputTokens  = response.usage.input_tokens  || response.usage.prompt_tokens     || 0;
+        outputTokens = response.usage.output_tokens || response.usage.completion_tokens || 0;
+        cacheCreationTokens = response.usage.cache_creation_input_tokens || 0;
+        cacheReadTokens     = response.usage.cache_read_input_tokens     || 0;
+        if (response.usage.prompt_tokens_details?.cached_tokens) {
+          cacheReadTokens = response.usage.prompt_tokens_details.cached_tokens;
         }
-
-        clearInterval(keepAliveInterval);
-
-        console.log(`✅ Native streaming complete: ${response.iterations || 1} iterations, ${toolsUsed.length} tools, cache: ${cacheReadTokens} read / ${cacheCreationTokens} write`);
-
-        sendChunk('', 'stop');
-        res.write('data: [DONE]\n\n');
-        res.end();
-
-        // Cleanup temp proxy images
-        cleanupTempProxies();
-
-      } catch (llmError) {
-        clearInterval(keepAliveInterval);
-
-        console.error('Native tool calling streaming error:', llmError.message);
-        sendChunk(`\n\n❌ Error: ${llmError.message}\n\n`);
-        sendChunk('', 'stop');
-        res.write('data: [DONE]\n\n');
-        res.end();
-
-        // Cleanup temp proxy images even on error
-        cleanupTempProxies();
       }
 
-    } else {
-      // ═══════════════════════════════════════════════════════════
-      // NON-STREAMING with Native Tool Calling
-      // ═══════════════════════════════════════════════════════════
-      let toolCallsDisplay = '';
+      console.log(`✅ Chat complete: ${response.iterations || 1} iterations, ${toolsUsed.length} tools, cache: ${cacheReadTokens}r / ${cacheCreationTokens}w`);
 
-      try {
-        const response = await chatCompletion({
-          model,
-          provider: llmProvider,
-          messages: processedMessages,
-          enabledTools: enabledToolNames,
-          config: toolConfig,
-
-          // Collect text
-          onText: (chunk) => {
-            assistantResponse += chunk;
-          },
-
-          // Collect tool calls display
-          onToolCall: (toolCall) => {
-            const toolName = toolCall.name;
-            const toolParams = toolCall.input || toolCall.arguments;
-
-            // Format friendly tool description based on tool type
-            const query = toolParams.query || toolParams.urls?.[0] || '';
-            let friendlyDesc;
-            switch (toolName) {
-              case 'web_search':
-                friendlyDesc = `🌐 Searching: ${query}...`;
-                break;
-              case 'deep_research':
-                friendlyDesc = `🔍 Deep Researching: ${query}...`;
-                break;
-              case 'web_scrape':
-                const urlCount = Array.isArray(toolParams.urls) ? toolParams.urls.length : 1;
-                const urlDisplay = urlCount > 1 ? `${urlCount} URLs` : query;
-                friendlyDesc = `📄 Scraping: ${urlDisplay}...`;
-                break;
-              case 'file_recall_search':
-                friendlyDesc = `📂 Searching documents: ${query}...`;
-                break;
-              default:
-                friendlyDesc = `🔧 ${toolName}: ${query}...`;
-            }
-
-            // Format tool call display with friendly description
-            const paramsJson = JSON.stringify(toolParams, null, 2);
-            toolCallsDisplay += `\n\n<details>\n<summary>${friendlyDesc}</summary>\n\n\`\`\`json\n${paramsJson}\n\`\`\`\n</details>\n\n`;
-
-            // Track tool usage
-            if (!toolsUsed.includes(toolName)) {
-              toolsUsed.push(toolName);
-            }
-
-            // Record for database
-            toolCallRecords.push({
-              tool_name: toolName,
-              tool_params: toolParams,
-              tool_result: '',
-              success: true,
-              execution_time_ms: 0
-            });
-          },
-
-          // Collect sandbox console output for non-streaming response
-          onToolOutput: (chunk) => {
-            assistantResponse += chunk;
-          },
-
-          // Sources are collected but not sent in non-streaming mode
-          // (OWUI pipeline always uses streaming, so this is mainly for API consistency)
-          onSource: () => {
-            // Non-streaming mode doesn't support SSE events
-            // Sources would need to be included in response body if needed
-          },
-
-          stream: false,
-          maxIterations: MAX_TOOL_ITERATIONS
-        });
-
-        // Update usage stats
-        if (response.usage) {
-          inputTokens = response.usage.input_tokens || response.usage.prompt_tokens || 0;
-          outputTokens = response.usage.output_tokens || response.usage.completion_tokens || 0;
-
-          // Anthropic cache tokens
-          cacheCreationTokens = response.usage.cache_creation_input_tokens || 0;
-          cacheReadTokens = response.usage.cache_read_input_tokens || 0;
-
-          // OpenAI cache tokens (nested in prompt_tokens_details)
-          if (response.usage.prompt_tokens_details?.cached_tokens) {
-            cacheReadTokens = response.usage.prompt_tokens_details.cached_tokens;
-          }
-        }
-
-        // Build final response with tool calls embedded
-        const fullContent = toolCallsDisplay
-          ? `${toolCallsDisplay}\n\n${assistantResponse}`
-          : assistantResponse;
-
-        console.log(`✅ Native non-streaming complete: ${response.iterations || 1} iterations, ${toolsUsed.length} tools`);
-
-        // Cleanup temp proxy images
-        cleanupTempProxies();
-
+      if (stream) {
+        sendChunk('', 'stop');
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else {
+        const fullContent = toolCallsDisplay ? `${toolCallsDisplay}\n\n${assistantResponse}` : assistantResponse;
         res.json({
           id: responseId,
           object: 'chat.completion',
@@ -1267,18 +1123,24 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
           choices: [{
             index: 0,
             message: { role: 'assistant', content: fullContent },
-            finish_reason: 'stop'
+            finish_reason: 'stop',
           }],
-          usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens, total_tokens: inputTokens + outputTokens }
+          usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
         });
-
-      } catch (llmError) {
-        console.error('Native tool calling error:', llmError.message);
-        // Cleanup temp proxy images even on error
-        cleanupTempProxies();
-        res.status(500).json({ error: 'LLM request failed', message: llmError.message });
-        return;
       }
+    } catch (llmError) {
+      console.error('LLM error:', llmError.message);
+      if (stream) {
+        sendChunk(`\n\n❌ Error: ${llmError.message}\n\n`);
+        sendChunk('', 'stop');
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else if (!res.headersSent) {
+        res.status(500).json({ error: 'LLM request failed', message: llmError.message });
+      }
+    } finally {
+      if (keepAliveInterval) clearInterval(keepAliveInterval);
+      cleanupTempProxies();
     }
 
     // Log request to database
@@ -1725,14 +1587,13 @@ async function callCompactionLLM(messagesToSummarize, config) {
   };
 
   let summaryText = '';
-  const response = await chatCompletion({
+  const response = await streamChat({
     model: config.compaction_model,
     provider: config.compaction_provider,
     messages: compactionPrompt,
     enabledTools: [],
     config: compactionConfig,
     onText: (chunk) => { summaryText += chunk; },
-    stream: false,
     maxIterations: 1,
   });
 
