@@ -1,6 +1,12 @@
 """
 OWUI Toolset V2 - Pipeline Function
-Forwards requests to the OWUI Toolset V2 server with streaming support.
+
+Forwards Open WebUI chat requests to the external OWUI Toolset V2 server
+with streaming SSE support.
+
+Configure via the Valves below. One model handles every chat (tool-using
+or not); a separate, usually cheaper model handles background
+conversation compaction.
 """
 
 from pydantic import BaseModel, Field
@@ -11,114 +17,88 @@ import time
 
 
 class Pipe:
-    """OWUI Toolset V2 Pipeline - forwards requests to external toolset server."""
-
     class Valves(BaseModel):
-        # Server
+        # Toolset server --------------------------------------------------
         TOOLSET_API_URL: str = Field(
             default="http://localhost:3000",
-            description="URL of the OWUI Toolset V2 server",
+            description="Base URL of the OWUI Toolset V2 server",
         )
         TOOLSET_API_KEY: str = Field(
             default="",
-            description="API key for authenticating with the toolset server",
+            description="Bearer token matching API_SECRET_KEY on the toolset server",
         )
 
-        # Tool Calling LLM (for requests that may use tools)
-        TOOL_CALLING_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
+        # Chat model (one model for everything — tools are enabled per request) -
+        LLM_PROVIDER: Literal["anthropic", "openai"] = Field(
             default="anthropic",
-            description="Provider for tool-calling requests",
+            description="Chat LLM provider",
         )
-        TOOL_CALLING_LLM_MODEL: str = Field(
+        LLM_MODEL: str = Field(
             default="claude-sonnet-4-6",
-            description="Any model name for the selected provider (e.g. claude-sonnet-4-5, gpt-5.2, llama3.1:8b)",
+            description="Any model ID for the selected provider (e.g. claude-sonnet-4-6, gpt-5.2)",
         )
 
-        # Conversational LLM (for simple chat without tools)
-        CONVERSATIONAL_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
+        # Compaction model (runs in background when conversations get long) ---
+        COMPACTION_PROVIDER: Literal["anthropic", "openai"] = Field(
             default="anthropic",
-            description="Provider for simple chat (no tools)",
+            description="Provider used for conversation compaction",
         )
-        CONVERSATIONAL_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-6",
-            description="Any model name for the selected provider (e.g. gpt-5.2, claude-haiku-4-5, llama3.1:8b)",
-        )
-
-        # Compaction LLM (for summarizing long conversations)
-        COMPACTION_LLM_PROVIDER: Literal["anthropic", "openai", "ollama"] = Field(
-            default="anthropic",
-            description="Provider for conversation compaction (use a fast, cheap model)",
-        )
-        COMPACTION_LLM_MODEL: str = Field(
-            default="claude-sonnet-4-6",
-            description="Model for compaction (e.g. claude-haiku-4-5, gpt-5, llama3.1:8b)",
+        COMPACTION_MODEL: str = Field(
+            default="claude-haiku-4-5",
+            description="Cheaper/faster model for compaction (e.g. claude-haiku-4-5, gpt-5)",
         )
         ENABLE_COMPACTION: bool = Field(
             default=True,
-            description="Enable automatic conversation compaction for long sessions",
+            description="Enable automatic summarisation of long conversations",
         )
 
-        # API Keys
+        # Provider credentials --------------------------------------------
         ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic API key")
         OPENAI_API_KEY: str = Field(default="", description="OpenAI API key")
-        OLLAMA_BASE_URL: str = Field(default="http://localhost:11434", description="Ollama base URL")
-        TAVILY_API_KEY: str = Field(default="", description="Tavily API key for tools")
 
-        # External Services
-        DOCLING_BASE_URL: str = Field(default="http://localhost:5001", description="Docling server URL")
+        # External tool services ------------------------------------------
+        TAVILY_API_KEY: str = Field(default="", description="Tavily API key (web search / scrape / research)")
+        DOCLING_BASE_URL: str = Field(default="", description="Docling server URL (PDF/DOCX extraction)")
         COMFYUI_BASE_URL: str = Field(default="", description="ComfyUI server URL (e.g. http://10.0.0.25:8188)")
 
-        # Custom System Prompt
-        CUSTOM_SYSTEM_PROMPT: str = Field(default="", description="Additional system prompt (optional)")
+        # System prompt add-on --------------------------------------------
+        CUSTOM_SYSTEM_PROMPT: str = Field(default="", description="Prepended to the system prompt for this instance")
 
-        # Tool Toggles - Web Tools (require Tavily API key)
+        # Tool toggles — Tavily-backed ------------------------------------
         ENABLE_WEB_SEARCH: bool = Field(default=True, description="Enable web search")
         ENABLE_WEB_SCRAPE: bool = Field(default=True, description="Enable web scraping")
-        ENABLE_DEEP_RESEARCH: bool = Field(default=True, description="Enable deep research")
+        ENABLE_DEEP_RESEARCH: bool = Field(default=True, description="Enable deep research (multi-source synthesis + PDF)")
+
+        # Tool toggles — sandboxed code execution -------------------------
         ENABLE_SANDBOX: bool = Field(default=True, description="Enable sandboxed code execution")
 
-        # Tool Toggles - Image Tools (require ComfyUI)
+        # Tool toggles — ComfyUI image tools ------------------------------
         ENABLE_IMAGE_GENERATION: bool = Field(default=True, description="Enable AI image generation")
         ENABLE_IMAGE_EDIT: bool = Field(default=True, description="Enable AI image editing")
         ENABLE_IMAGE_BLEND: bool = Field(default=True, description="Enable AI image blending")
 
-        # Tool Toggles - Memory Tools (local, no external service needed)
-        ENABLE_MEMORY: bool = Field(default=True, description="Enable user memory (LLM remembers facts about users across conversations)")
+        # Tool toggles — persistent memory / time -------------------------
+        ENABLE_MEMORY: bool = Field(default=True, description="Enable per-user memory tools")
+        ENABLE_DATE_TIME: bool = Field(default=True, description="Enable current-time and date-difference tools")
 
-        # Tool Toggles - Date/Time Tools (local, no external service needed)
-        ENABLE_DATE_TIME: bool = Field(default=True, description="Enable date/time tools (current time, date differences/calculations)")
-
-        # Tool Toggles - File Recall (requires OpenAI vector store per instance)
-        ENABLE_FILE_RECALL: bool = Field(default=False, description="Enable file recall (search internal documents via OpenAI vector store)")
-        FILE_RECALL_INSTANCE_ID: str = Field(default="", description="Instance ID for file recall - isolates document libraries between clients")
+        # Tool toggles — File Recall (OpenAI vector store) ----------------
+        ENABLE_FILE_RECALL: bool = Field(default=False, description="Enable file recall over the document library")
+        FILE_RECALL_INSTANCE_ID: str = Field(default="", description="File Recall instance ID for this client")
 
     def __init__(self):
         self.valves = self.Valves()
-        # Disable automatic citations - we emit custom citations via events
+        # Emit citations ourselves via SSE source events.
         self.citation = False
 
     def pipes(self) -> List[Dict[str, str]]:
         return [{"id": "owui-toolset-v2", "name": "OWUI Toolset V2"}]
 
-    def _has_tools_enabled(self) -> bool:
-        # Web tools require Tavily API key
-        has_web_tools = (
-            self.valves.TAVILY_API_KEY and (
-                self.valves.ENABLE_WEB_SEARCH or
-                self.valves.ENABLE_WEB_SCRAPE or
-                self.valves.ENABLE_DEEP_RESEARCH
-            )
-        )
-        # Image tools require ComfyUI URL
-        has_image_tools = (
-            self.valves.COMFYUI_BASE_URL and (
-                self.valves.ENABLE_IMAGE_GENERATION or
-                self.valves.ENABLE_IMAGE_EDIT or
-                self.valves.ENABLE_IMAGE_BLEND
-            )
-        )
-        has_file_recall = self.valves.FILE_RECALL_INSTANCE_ID and self.valves.ENABLE_FILE_RECALL
-        return has_web_tools or has_image_tools or self.valves.ENABLE_SANDBOX or self.valves.ENABLE_MEMORY or self.valves.ENABLE_DATE_TIME or has_file_recall
+    def _any_tools_enabled(self) -> bool:
+        v = self.valves
+        has_web = bool(v.TAVILY_API_KEY) and (v.ENABLE_WEB_SEARCH or v.ENABLE_WEB_SCRAPE or v.ENABLE_DEEP_RESEARCH)
+        has_img = bool(v.COMFYUI_BASE_URL) and (v.ENABLE_IMAGE_GENERATION or v.ENABLE_IMAGE_EDIT or v.ENABLE_IMAGE_BLEND)
+        has_fr = v.ENABLE_FILE_RECALL and bool(v.FILE_RECALL_INSTANCE_ID)
+        return has_web or has_img or v.ENABLE_SANDBOX or v.ENABLE_MEMORY or v.ENABLE_DATE_TIME or has_fr
 
     async def pipe(
         self,
@@ -129,15 +109,11 @@ class Pipe:
         __chat_id__: str = None,
         __event_emitter__: Callable[[dict], Awaitable[None]] = None,
     ) -> str:
-        if not self.valves.TOOLSET_API_URL:
+        v = self.valves
+        if not v.TOOLSET_API_URL:
             return "Error: TOOLSET_API_URL not configured"
-        if not self.valves.TOOLSET_API_KEY:
+        if not v.TOOLSET_API_KEY:
             return "Error: TOOLSET_API_KEY not configured"
-
-        # Select LLM based on tools availability
-        use_tools = self._has_tools_enabled()
-        provider = self.valves.TOOL_CALLING_LLM_PROVIDER if use_tools else self.valves.CONVERSATIONAL_LLM_PROVIDER
-        model = self.valves.TOOL_CALLING_LLM_MODEL if use_tools else self.valves.CONVERSATIONAL_LLM_MODEL
 
         payload = {
             **body,
@@ -146,32 +122,31 @@ class Pipe:
             "owui_instance": (__metadata__ or {}).get("interface", "open-webui"),
             "files": __files__ or [],
             "config": {
-                "llm_provider": provider,
-                "llm_model": model,
-                "use_tools": use_tools,
-                "anthropic_api_key": self.valves.ANTHROPIC_API_KEY,
-                "openai_api_key": self.valves.OPENAI_API_KEY,
-                "ollama_base_url": self.valves.OLLAMA_BASE_URL,
-                "tavily_api_key": self.valves.TAVILY_API_KEY,
-                "docling_base_url": self.valves.DOCLING_BASE_URL,
-                "comfyui_base_url": self.valves.COMFYUI_BASE_URL,
-                "toolset_api_url": self.valves.TOOLSET_API_URL,
-                "custom_system_prompt": self.valves.CUSTOM_SYSTEM_PROMPT,
-                "compaction_provider": self.valves.COMPACTION_LLM_PROVIDER,
-                "compaction_model": self.valves.COMPACTION_LLM_MODEL,
-                "enable_compaction": self.valves.ENABLE_COMPACTION,
-                "file_recall_instance_id": self.valves.FILE_RECALL_INSTANCE_ID,
+                "llm_provider": v.LLM_PROVIDER,
+                "llm_model": v.LLM_MODEL,
+                "use_tools": self._any_tools_enabled(),
+                "anthropic_api_key": v.ANTHROPIC_API_KEY,
+                "openai_api_key": v.OPENAI_API_KEY,
+                "tavily_api_key": v.TAVILY_API_KEY,
+                "docling_base_url": v.DOCLING_BASE_URL,
+                "comfyui_base_url": v.COMFYUI_BASE_URL,
+                "toolset_api_url": v.TOOLSET_API_URL,
+                "custom_system_prompt": v.CUSTOM_SYSTEM_PROMPT,
+                "compaction_provider": v.COMPACTION_PROVIDER,
+                "compaction_model": v.COMPACTION_MODEL,
+                "enable_compaction": v.ENABLE_COMPACTION,
+                "file_recall_instance_id": v.FILE_RECALL_INSTANCE_ID,
                 "tools": {
-                    "web_search": self.valves.ENABLE_WEB_SEARCH,
-                    "web_scrape": self.valves.ENABLE_WEB_SCRAPE,
-                    "deep_research": self.valves.ENABLE_DEEP_RESEARCH,
-                    "sandbox": self.valves.ENABLE_SANDBOX,
-                    "image_generation": self.valves.ENABLE_IMAGE_GENERATION,
-                    "image_edit": self.valves.ENABLE_IMAGE_EDIT,
-                    "image_blend": self.valves.ENABLE_IMAGE_BLEND,
-                    "memory": self.valves.ENABLE_MEMORY,
-                    "date_time": self.valves.ENABLE_DATE_TIME,
-                    "file_recall": self.valves.ENABLE_FILE_RECALL,
+                    "web_search": v.ENABLE_WEB_SEARCH,
+                    "web_scrape": v.ENABLE_WEB_SCRAPE,
+                    "deep_research": v.ENABLE_DEEP_RESEARCH,
+                    "sandbox": v.ENABLE_SANDBOX,
+                    "image_generation": v.ENABLE_IMAGE_GENERATION,
+                    "image_edit": v.ENABLE_IMAGE_EDIT,
+                    "image_blend": v.ENABLE_IMAGE_BLEND,
+                    "memory": v.ENABLE_MEMORY,
+                    "date_time": v.ENABLE_DATE_TIME,
+                    "file_recall": v.ENABLE_FILE_RECALL,
                 },
             },
         }
@@ -181,22 +156,21 @@ class Pipe:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{self.valves.TOOLSET_API_URL}/api/v1/chat",
+                    f"{v.TOOLSET_API_URL}/api/v1/chat",
                     json=payload,
                     headers={
-                        "Authorization": f"Bearer {self.valves.TOOLSET_API_KEY}",
+                        "Authorization": f"Bearer {v.TOOLSET_API_KEY}",
                         "Content-Type": "application/json",
                     },
                 ) as response:
                     response.raise_for_status()
                     current_event = None
 
-                    # Batch token emissions to reduce event emitter overhead
-                    # Instead of awaiting __event_emitter__ for every token (~7000 calls),
-                    # accumulate text and flush periodically (~50 calls)
+                    # Batch token emissions to avoid one __event_emitter__ call
+                    # per token. Accumulate and flush every ~50ms.
                     token_buffer = ""
                     last_flush = time.monotonic()
-                    FLUSH_INTERVAL = 0.05  # Flush every 50ms
+                    FLUSH_INTERVAL = 0.05
 
                     async def flush_buffer():
                         nonlocal token_buffer, last_flush
@@ -235,13 +209,12 @@ class Pipe:
                             except json.JSONDecodeError:
                                 current_event = None
 
-                    # Final flush in case stream ended without [DONE]
                     await flush_buffer()
             return ""
         except httpx.TimeoutException:
             return "Error: Request timed out"
         except httpx.ConnectError:
-            return f"Error: Could not connect to {self.valves.TOOLSET_API_URL}"
+            return f"Error: Could not connect to {v.TOOLSET_API_URL}"
         except httpx.HTTPStatusError as e:
             return f"Error: HTTP {e.response.status_code}"
         except Exception as e:
