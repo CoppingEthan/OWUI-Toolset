@@ -201,11 +201,17 @@ export async function curateOldToolResults(messages, config, opts = {}) {
   }
 
   const tokens = estimateTokens(messages);
+  const refs = findToolResults(messages);
+  console.log(
+    `[CURATION CHECK] iter=${opts.iteration || '?'} tokens=~${tokens} ` +
+    `(threshold=${CURATION_TRIGGER_TOKENS}) tool_results=${refs.length} ` +
+    `(keep_recent=${CURATION_KEEP_RECENT})`,
+  );
+
   if (tokens < CURATION_TRIGGER_TOKENS) {
     return { events: [] };
   }
 
-  const refs = findToolResults(messages);
   if (refs.length <= CURATION_KEEP_RECENT) {
     return { events: [] };
   }
