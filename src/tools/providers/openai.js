@@ -241,5 +241,41 @@ export async function streamChat({
     };
   }
 
-  throw new Error(`Tool execution loop exceeded ${maxIterations} iterations`);
+  // Iteration cap reached without natural termination. Make one final
+  // tool-less call so the model produces a summary from what it gathered.
+  console.warn(`⚠️ Tool loop hit ${maxIterations} iteration cap; requesting final summary.`);
+  input.push({
+    type: 'message',
+    role: 'user',
+    content: `[Tool iteration cap of ${maxIterations} reached.] Please provide your best final answer to the user's request based on the information already gathered. Do not request any more tools.`,
+  });
+  const finalStream = await client.responses.create({
+    model,
+    input,
+    reasoning: { effort: 'none' },
+    text: { verbosity: 'medium' },
+    stream: true,
+  });
+  let finalText = '';
+  let finalUsage = null;
+  for await (const event of finalStream) {
+    if (event.type === 'response.output_text.delta') {
+      if (event.delta) { if (onText) onText(event.delta); finalText += event.delta; }
+    } else if (event.type === 'response.completed') {
+      if (event.response?.usage) finalUsage = event.response.usage;
+    }
+  }
+  if (finalUsage) {
+    totalUsage.input_tokens += finalUsage.input_tokens || 0;
+    totalUsage.output_tokens += finalUsage.output_tokens || 0;
+    if (finalUsage.input_tokens_details?.cached_tokens) {
+      totalUsage.prompt_tokens_details.cached_tokens += finalUsage.input_tokens_details.cached_tokens;
+    }
+  }
+  return {
+    content: finalText || '[Tool loop exceeded iteration cap before producing a final answer.]',
+    stop_reason: 'iteration_cap',
+    usage: totalUsage,
+    iterations: maxIterations,
+  };
 }
