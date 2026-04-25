@@ -224,6 +224,16 @@ export function createDashboardApp(db) {
     catch (err) { res.status(500).json({ error: err.message }); }
   });
 
+  app.get('/api/stats/curation', authenticate, (req, res) => {
+    try {
+      const days = parseInt(req.query.days || '7', 10);
+      res.json({
+        summary: db.getCurationStats(days),
+        byTool: db.getCurationByTool(days),
+      });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   // Note: this wildcard route must be registered AFTER all specific /api/stats/* routes.
   app.get('/api/stats/:timeRange', authenticate, (req, res) => {
     try { res.json(db.getStatistics(req.params.timeRange, req.query.domain || null)); }

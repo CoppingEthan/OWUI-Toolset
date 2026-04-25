@@ -1173,6 +1173,13 @@
                     <div class="value" id="stat-tool-count">-</div>
                     <div id="tool-breakdown"></div>
                 </div>
+
+                <div class="stat-item">
+                    <h3>Context Curation (7d)</h3>
+                    <div class="value" id="stat-curation-tokens">-</div>
+                    <div class="stat-subvalue" id="stat-curation-events">-</div>
+                    <div id="curation-breakdown"></div>
+                </div>
             </div>
 
             <div class="sidebar-footer">
@@ -1801,6 +1808,7 @@
                 await Promise.all([
                     loadStatistics(),
                     loadToolCount(),
+                    loadCurationStats(),
                     loadTokenTimeSeries(),
                     loadRecentConversations(),
                     loadDomains()
@@ -1826,6 +1834,37 @@
             document.getElementById('stat-cache-hit').textContent = formatNumber(stats.total_cache_read_tokens || 0);
             document.getElementById('stat-output-tokens').textContent = formatNumber(stats.total_output_tokens || 0);
             document.getElementById('stat-cost').textContent = '$' + (stats.total_cost || 0).toFixed(4);
+        }
+
+        // Load context-curation stats (within-loop tool result trimming)
+        async function loadCurationStats() {
+            try {
+                const res = await fetch('/api/stats/curation?days=7');
+                const data = await res.json();
+                const summary = data?.summary || {};
+                const byTool = data?.byTool || [];
+
+                const tokens = summary.tokens_saved || 0;
+                const events = summary.event_count || 0;
+                const requests = summary.request_count || 0;
+                const summarized = summary.summarized_count || 0;
+
+                document.getElementById('stat-curation-tokens').textContent = formatNumber(tokens) + ' tok saved';
+                document.getElementById('stat-curation-events').textContent =
+                    `${events} events / ${requests} reqs (${summarized} summarized)`;
+
+                const breakdown = document.getElementById('curation-breakdown');
+                if (byTool.length === 0) {
+                    breakdown.innerHTML = '';
+                } else {
+                    breakdown.innerHTML = byTool.slice(0, 3).map(t => `
+                        <div class="tool-stat">
+                            <span class="tool-name">${t.tool_name}</span>
+                            <span class="tool-count">${formatNumber(t.tokens_saved || 0)}</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) { console.error('Error loading curation stats:', e); }
         }
 
         // Load tool count

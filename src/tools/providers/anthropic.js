@@ -10,6 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { toAnthropicTools } from '../definitions.js';
 import { executeToolCall } from '../executor.js';
+import { curateOldToolResults } from '../../api/context-curator.js';
 import { logRequest, logResponse, logMessages } from '../../utils/debug-logger.js';
 
 const DEFAULT_MAX_TOKENS = 4096;
@@ -223,11 +224,13 @@ export async function streamChat({
   enabledTools = [],
   config,
   maxIterations = 5,
+  curatorConfig = null,
   onText,
   onToolCall,
   onToolResult,
   onToolOutput,
   onSource,
+  onCurationEvent,
 }) {
   const client = getClient(config);
   const rawTools = enabledTools.length > 0 ? toAnthropicTools(enabledTools) : null;
@@ -281,6 +284,14 @@ export async function streamChat({
       const toolUseBlocks = finalMessage.content.filter(b => b.type === 'tool_use');
       const toolResults = await runTools(toolUseBlocks, config, { onToolCall, onToolResult, onToolOutput, onSource });
       conversation.push({ role: 'user', content: toolResults });
+
+      // Curate older tool results if accumulated context exceeds threshold.
+      if (curatorConfig) {
+        const { events } = await curateOldToolResults(conversation, curatorConfig, { iteration });
+        if (events.length > 0 && onCurationEvent) {
+          for (const ev of events) onCurationEvent(ev);
+        }
+      }
       continue;
     }
 

@@ -11,6 +11,7 @@
 import OpenAI from 'openai';
 import { toOpenAITools } from '../definitions.js';
 import { executeToolCall } from '../executor.js';
+import { curateOldToolResults } from '../../api/context-curator.js';
 import { logRequest, logResponse, logMessages } from '../../utils/debug-logger.js';
 
 function getClient(config) {
@@ -130,17 +131,21 @@ export async function streamChat({
   config,
   maxIterations = 5,
   strictMode = false,
+  curatorConfig = null,
   onText,
   onToolCall,
   onToolResult,
   onToolOutput,
   onSource,
+  onCurationEvent,
 }) {
   const client = getClient(config);
   const tools = enabledTools.length > 0 ? toOpenAITools(enabledTools, { strict: strictMode }) : null;
 
+  // Maintain the full input history locally so the context curator can
+  // manage it. Don't use previous_response_id chaining — it keeps state
+  // server-side where we can't curate.
   let input = toResponsesInput(messages);
-  let previousResponseId = null;
 
   const totalUsage = {
     input_tokens: 0,
@@ -157,7 +162,6 @@ export async function streamChat({
       text: { verbosity: 'medium' },
       ...(tools && { tools, tool_choice: 'auto' }),
       ...(strictMode && { parallel_tool_calls: false }),
-      ...(previousResponseId && { previous_response_id: previousResponseId }),
       stream: true,
     };
 
@@ -170,11 +174,9 @@ export async function streamChat({
     const toolCalls = [];
     let currentToolCall = null;
     let streamUsage = null;
-    let responseId = null;
+    let assistantTextItem = null; // captured to append to history
 
     for await (const event of stream) {
-      if (event.response?.id) responseId = event.response.id;
-
       if (event.type === 'response.output_text.delta') {
         if (event.delta && onText) { onText(event.delta); accumulatedText += event.delta; }
       } else if (event.type === 'response.function_call_arguments.delta') {
@@ -191,15 +193,15 @@ export async function streamChat({
             arguments: event.item.arguments,
           });
           currentToolCall = null;
+        } else if (event.item?.type === 'message' && event.item.role === 'assistant') {
+          // Capture the assistant's text item for history.
+          assistantTextItem = event.item;
         }
       } else if (event.type === 'response.completed') {
         if (event.response?.usage) streamUsage = event.response.usage;
-        if (event.response?.id) responseId = event.response.id;
         logResponse('openai-stream', event.response);
       }
     }
-
-    previousResponseId = responseId;
 
     if (streamUsage) {
       totalUsage.input_tokens += streamUsage.input_tokens || 0;
@@ -213,9 +215,21 @@ export async function streamChat({
     }
 
     if (toolCalls.length > 0) {
+      // Append assistant's text (if any) and the function_call items to history.
+      if (assistantTextItem) input.push(assistantTextItem);
+      for (const tc of toolCalls) {
+        input.push({ type: 'function_call', call_id: tc.call_id, name: tc.name, arguments: tc.arguments });
+      }
       const toolResults = await runTools(toolCalls, config, { onToolCall, onToolResult, onToolOutput, onSource });
-      // Subsequent iterations send only the tool outputs; previous_response_id carries context.
-      input = toolResults;
+      input.push(...toolResults);
+
+      // Curate older tool results if accumulated context exceeds threshold.
+      if (curatorConfig) {
+        const { events } = await curateOldToolResults(input, curatorConfig, { iteration });
+        if (events.length > 0 && onCurationEvent) {
+          for (const ev of events) onCurationEvent(ev);
+        }
+      }
       continue;
     }
 

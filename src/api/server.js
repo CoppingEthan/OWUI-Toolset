@@ -697,6 +697,7 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     let userInputMessage = '';
     let assistantResponse = '';
     const toolCallRecords = []; // {tool_name, tool_params, tool_result, success, execution_time_ms}
+    const curationEventRecords = []; // {tool_name, iteration, original_chars, curated_chars, chars_saved, tokens_saved_estimate, used_summary}
 
     // Get enabled tools using native tool definitions
     // Only enable tools if useTools flag is true (from pipeline decision)
@@ -731,6 +732,24 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         }
       } catch (e) {
         console.error('Failed to inject user memories:', e.message);
+      }
+    }
+
+    // Inject context-management hint so the agent synthesises findings as it
+    // goes — this makes within-loop curation safer because the assistant's
+    // own running notes survive even when raw tool results get summarised.
+    if (enabledToolNames.length > 1) {
+      const synthesisNote = `\n\n[Tool-loop context hint] When you call multiple tools that return ` +
+        `large content (web_scrape, deep_research, web_search), briefly synthesise the key findings ` +
+        `(facts, names, URLs, numbers) in your assistant message AFTER each tool call before invoking ` +
+        `the next one. Old tool results may be condensed automatically once context grows large; your ` +
+        `own notes between tool calls are always preserved.`;
+
+      const systemMsg = processedMessages.find(m => m.role === 'system');
+      if (systemMsg) {
+        systemMsg.content += synthesisNote;
+      } else {
+        processedMessages.unshift({ role: 'system', content: synthesisNote.trim() });
       }
     }
 
@@ -954,6 +973,17 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     }
 
     try {
+      // Curator borrows the configured compaction model to summarise old
+      // tool results when context grows too large within a single tool loop.
+      // If no compaction model is configured the curator falls back to a
+      // dumb placeholder, but still trims old results.
+      const curatorConfig = {
+        compaction_provider: config.compaction_provider,
+        compaction_model: config.compaction_model,
+        anthropic_api_key: config.anthropic_api_key,
+        openai_api_key: config.openai_api_key,
+      };
+
       const response = await streamChat({
         model,
         provider: llmProvider,
@@ -961,10 +991,15 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         enabledTools: enabledToolNames,
         config: toolConfig,
         maxIterations: MAX_TOOL_ITERATIONS,
+        curatorConfig,
 
         onText: (chunk) => {
           assistantResponse += chunk;
           if (stream) sendChunk(chunk);
+        },
+
+        onCurationEvent: (ev) => {
+          curationEventRecords.push(ev);
         },
 
         onToolCall: (toolCall) => {
@@ -1122,7 +1157,14 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         db.insertToolCall(requestId, toolCall);
       }
 
-      console.log(`📊 Logged: ${modelUsed} | ${inputTokens} in / ${outputTokens} out | cache: ${cacheReadTokens} read / ${cacheCreationTokens} write | ${toolCallRecords.length} tools | ${responseTime}ms`);
+      for (const ev of curationEventRecords) {
+        db.insertCurationEvent(requestId, ev);
+      }
+
+      const curationSuffix = curationEventRecords.length > 0
+        ? ` | curated ${curationEventRecords.length} (~${curationEventRecords.reduce((s, e) => s + (e.tokens_saved_estimate || 0), 0)} tokens saved)`
+        : '';
+      console.log(`📊 Logged: ${modelUsed} | ${inputTokens} in / ${outputTokens} out | cache: ${cacheReadTokens} read / ${cacheCreationTokens} write | ${toolCallRecords.length} tools | ${responseTime}ms${curationSuffix}`);
     } catch (dbError) {
       console.error('Database logging error:', dbError.message);
     }

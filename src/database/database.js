@@ -644,6 +644,68 @@ class DatabaseManager {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Curation events (within-loop tool-result curation telemetry)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  insertCurationEvent(requestId, ev) {
+    const stmt = this.db.prepare(`
+      INSERT INTO curation_events (
+        request_id, tool_name, iteration,
+        original_chars, curated_chars, chars_saved, tokens_saved_estimate,
+        used_summary
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([
+      requestId,
+      ev.tool_name,
+      ev.iteration || 0,
+      ev.original_chars || 0,
+      ev.curated_chars || 0,
+      ev.chars_saved || 0,
+      ev.tokens_saved_estimate || 0,
+      ev.used_summary ? 1 : 0,
+    ]);
+    stmt.free();
+    this.saveThrottled();
+  }
+
+  getCurationStats(daysBack = 7) {
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) AS event_count,
+        COUNT(DISTINCT request_id) AS request_count,
+        COALESCE(SUM(tokens_saved_estimate), 0) AS tokens_saved,
+        COALESCE(SUM(chars_saved), 0) AS chars_saved,
+        COALESCE(SUM(used_summary), 0) AS summarized_count,
+        COUNT(*) - COALESCE(SUM(used_summary), 0) AS placeholder_count
+      FROM curation_events
+      WHERE timestamp >= datetime('now', '-' || ? || ' days')
+    `);
+    stmt.bind([daysBack]);
+    const row = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return row;
+  }
+
+  getCurationByTool(daysBack = 7) {
+    const stmt = this.db.prepare(`
+      SELECT tool_name,
+             COUNT(*) AS events,
+             SUM(tokens_saved_estimate) AS tokens_saved,
+             SUM(used_summary) AS summarized
+      FROM curation_events
+      WHERE timestamp >= datetime('now', '-' || ? || ' days')
+      GROUP BY tool_name
+      ORDER BY tokens_saved DESC
+    `);
+    stmt.bind([daysBack]);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Conversation summaries (compaction)
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -660,7 +722,7 @@ class DatabaseManager {
     if (existing) {
       const stmt = this.db.prepare(`
         UPDATE conversation_summaries
-        SET summary = ?, watermark = ?, updated_at = CURRENT_TIMESTAMP
+        SET summary = ?, watermark = ?, compaction_count = compaction_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE conversation_id = ?
       `);
       stmt.run([summary, watermark, conversationId]);

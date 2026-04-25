@@ -151,6 +151,26 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_conversation_summaries_conv_id ON conversation_summaries(conversation_id);
 
+-- Curation events: one row per tool result curated within a request.
+-- Lets the dashboard show how much context the within-loop curator
+-- saved, and detect "thrashing" (same tool re-called after curation).
+CREATE TABLE IF NOT EXISTS curation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id INTEGER NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tool_name TEXT NOT NULL,
+    iteration INTEGER DEFAULT 0,
+    original_chars INTEGER DEFAULT 0,
+    curated_chars INTEGER DEFAULT 0,
+    chars_saved INTEGER DEFAULT 0,
+    tokens_saved_estimate INTEGER DEFAULT 0,
+    used_summary INTEGER DEFAULT 0,
+    FOREIGN KEY (request_id) REFERENCES request_metrics(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_curation_events_request_id ON curation_events(request_id);
+CREATE INDEX IF NOT EXISTS idx_curation_events_tool_name ON curation_events(tool_name);
+
 -- File Recall - Instance configuration (one per client)
 CREATE TABLE IF NOT EXISTS file_recall_instances (
     id TEXT PRIMARY KEY,                    -- Instance ID slug (e.g. "client-acme")
