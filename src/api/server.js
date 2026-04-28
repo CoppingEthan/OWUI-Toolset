@@ -636,8 +636,12 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
             msg.content = textContent;
           }
         } else {
-          // Not the last message - just combine text, no images
-          msg.content = textBlocks.map(b => b.text).join('\n') || '';
+          // Not the last message - just combine text, no images.
+          // If the original message was image-only (no caption), keep a
+          // placeholder so we never emit an empty user/assistant message:
+          // Anthropic rejects messages with empty content (400 invalid_request).
+          const text = textBlocks.map(b => b.text).join('\n');
+          msg.content = text || (imageBlockCount > 0 ? '[image]' : '[empty]');
         }
       } else if (typeof msg.content === 'string') {
         // String content - inject image context into last user message
