@@ -161,16 +161,10 @@ For deeper visual-design guidance, call `load_skill("frontend-design")`.
 
 ## Step 4: Render to PNG
 
-The sandbox has Chromium and Python available. Use Playwright — most reliable across image types and respects custom fonts:
+Playwright + Chromium are **pre-installed** in the sandbox image — no `pip install` step needed. Just import and run:
 
 ```python
 # /workspace/render.py
-import subprocess, sys
-
-# One-time per sandbox session:
-subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', 'playwright'], check=True)
-subprocess.run([sys.executable, '-m', 'playwright', 'install', '--with-deps', 'chromium'], check=True)
-
 from playwright.sync_api import sync_playwright
 
 WIDTH, HEIGHT = 1080, 1080  # MUST match the HTML canvas
@@ -193,9 +187,9 @@ python /workspace/render.py
 
 `device_scale_factor=2` produces a retina-quality PNG (1080×1080 canvas → 2160×2160 PNG) which crops cleanly and looks crisp on every platform. Drop to `1` if file size matters more than fidelity.
 
-### Faster fallback (no playwright install)
+### Faster fallback for plain designs
 
-For simple designs without fancy fonts/effects, `wkhtmltoimage` is preinstalled and ~10× faster:
+For simple designs without custom fonts/effects, `wkhtmltoimage` is also preinstalled and ~10× faster:
 
 ```bash
 wkhtmltoimage --width 1080 --height 1080 /workspace/post.html /workspace/post.png

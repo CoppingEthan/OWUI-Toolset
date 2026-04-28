@@ -115,6 +115,15 @@ RUN npm install -g \
     # SVG
     svgo
 
+# Pre-install Playwright + Chromium so HTML→PNG rendering (used by the
+# social-media-posts skill and any other visual-export workflow) works
+# instantly without runtime pip install. The sandbox writeable layer is
+# small; ~150MB of chromium binaries won't fit there.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN pip3 install --break-system-packages --ignore-installed playwright \
+    && playwright install --with-deps chromium \
+    && chmod -R a+rX /opt/playwright-browsers
+
 # Create non-root user (remove existing UID 1000 user if present, e.g. ubuntu)
 RUN existing=$(id -nu 1000 2>/dev/null) && [ -n "$existing" ] && userdel -r "$existing" || true \
     && useradd -m -u 1000 -s /bin/bash sandbox
