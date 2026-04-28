@@ -62,10 +62,57 @@ for img in soup.find_all('img'):
 
 Look for:
 - Primary brand colour + accent colour (look at hex repetitions in the CSS, the navbar background, the call-to-action button)
-- Logo URL — download to `/workspace/logo.png` (or `.svg`)
+- Logo URL — download to `/workspace/logo.png`. **See "Logos and SVGs" below — SVGs need special handling.**
 - Custom fonts — check for Google Fonts `<link href="https://fonts.googleapis.com/...">` tags
 
 If the company doesn't expose clean assets (or there's no website), ask the user for their brand colour and logo file directly.
+
+### Logos and SVGs
+
+**Never embed an SVG via `<img src="logo.svg">`.** wkhtmltoimage often fails to render external SVG references, and even Chromium can choke on SVGs that depend on stylesheet variables or `<use>` references defined elsewhere. Convert or inline instead, in this priority order:
+
+1. **Convert SVG → PNG before rendering** (works reliably for both renderers):
+   ```bash
+   # imagemagick is preinstalled in the sandbox
+   convert -background none -density 300 /workspace/logo.svg -resize 400x /workspace/logo.png
+   # Or with rsvg-convert if more accurate vector handling is needed:
+   # apt-get install -y librsvg2-bin  (requires root, usually unavailable)
+   ```
+   Then reference `logo.png` in your HTML. `-density 300` gives crisp results at scale; `-resize 400x` caps width so the file isn't oversized.
+
+2. **Inline the SVG XML directly in the HTML** (preserves vector sharpness if the SVG is self-contained):
+   ```html
+   <!-- Don't do this: -->
+   <!-- <img class="logo" src="logo.svg"> -->
+
+   <!-- Do this — paste the entire <svg>...</svg> block: -->
+   <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="..." width="200">
+     <path d="..."/>
+     ...
+   </svg>
+   ```
+   Read the SVG file with sandbox, paste its content where the `<img>` would have been. Set width/height via CSS on the `<svg>` element. Only do this if the SVG is self-contained — no external CSS, no `<use xlink:href="external#id">`, no `<script>`.
+
+3. **If the logo is buried in a page's inline `<svg>` (no downloadable .svg file)** — fetch the HTML, parse it, extract the SVG block:
+   ```python
+   import requests
+   from bs4 import BeautifulSoup
+   html = requests.get('https://example.com').text
+   soup = BeautifulSoup(html, 'html.parser')
+   # Find SVG by surrounding link/class hint, or by viewBox dimensions
+   svg = soup.find('svg', class_=lambda c: c and 'logo' in c.lower()) \
+       or soup.select_one('a[href="/"] svg') \
+       or soup.find('svg')
+   if svg:
+       open('/workspace/logo.svg', 'w').write(str(svg))
+       print('Extracted SVG:', len(str(svg)), 'chars')
+   ```
+   Then convert to PNG (option 1) or inline (option 2).
+
+4. **If conversion fails or the result looks wrong, ask the user to upload their logo as a PNG.** Don't ship a broken/garbled logo. A polite ask saves more time than guessing:
+   > "I had trouble extracting your logo cleanly from the website. Could you upload a PNG version (transparent background ideally)? I'll use that instead."
+
+Quick check the converted/inline logo renders properly: render a tiny test HTML with just the logo on white background BEFORE building the full slide. If it looks wrong there, fix it before investing iterations in the full design.
 
 ### Hero / visual content
 
