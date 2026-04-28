@@ -24,6 +24,7 @@ const { default: db } = await import('./database/instance.js');
 const { createApiApp, applyServerTimeouts } = await import('./api/server.js');
 const { createDashboardApp } = await import('./dashboard/server.js');
 const { containerManager } = await import('./tools/sandbox/manager.js');
+const { initSkills } = await import('./skills/loader.js');
 
 const API_PORT = parseInt(process.env.PORT || '3000', 10);
 const API_HOST = process.env.HOST || '0.0.0.0';
@@ -34,6 +35,10 @@ const PID_FILE = path.join(__dirname, '..', '.owui.pid');
 fs.writeFileSync(PID_FILE, String(process.pid));
 
 console.log('\n🚀 OWUI Toolset V2 Starting...\n');
+
+// Build the always-loaded skills index so chat requests can inject the
+// list into the system prompt without rescanning the filesystem.
+initSkills();
 
 // Reclaim any sandbox containers left behind by a previous run
 // (fire-and-forget — Docker is optional).

@@ -15,6 +15,7 @@ import { executeImageGeneration, executeImageEdit, executeImageBlend, executeVie
 import { executeMemoryRetrieve, executeMemoryCreate, executeMemoryUpdate, executeMemoryDelete } from './executors/memory.js';
 import { executeDateTimeNow, executeDateTimeDiff } from './executors/date-time.js';
 import { executeFileRecallSearch } from './executors/file-recall.js';
+import { executeLoadSkill } from './executors/skills.js';
 import { formatToolResult } from '../utils/tool-result.js';
 import { logToolCall } from '../utils/debug-logger.js';
 
@@ -52,6 +53,9 @@ const HANDLERS = {
   // Date/time (synchronous)
   date_time_now:      (p) => executeDateTimeNow(p),
   date_time_diff:     (p) => executeDateTimeDiff(p),
+
+  // Skills
+  load_skill:         (p) => executeLoadSkill(p),
 };
 
 /**

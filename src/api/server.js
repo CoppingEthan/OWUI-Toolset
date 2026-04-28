@@ -27,6 +27,7 @@ import { createFileRecallRouter } from '../file-recall/router.js';
 import { isInstanceAllowed } from './ip-allowlist.js';
 import { createPricingLookup } from './cost.js';
 import { compactMessages, trimMessagesToTokenLimit, estimateTokens, MAX_INPUT_TOKENS } from './compaction.js';
+import { listSkills, buildSkillsPromptBlock } from '../skills/loader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -703,6 +704,12 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
     const toolCallRecords = []; // {tool_name, tool_params, tool_result, success, execution_time_ms}
     const curationEventRecords = []; // {tool_name, iteration, original_chars, curated_chars, chars_saved, tokens_saved_estimate, used_summary}
 
+    // Skills only enable if at least one is on disk. Override the toggle so
+    // we don't surface load_skill with an empty roster.
+    if (config.tools?.skills && listSkills().length === 0) {
+      config.tools.skills = false;
+    }
+
     // Get enabled tools using native tool definitions
     // Only enable tools if useTools flag is true (from pipeline decision)
     const enabledToolNames = useTools ? getEnabledToolNames(config) : [];
@@ -754,6 +761,21 @@ app.post('/api/v1/chat', authenticate, express.json({ limit: '50mb' }), async (r
         systemMsg.content += synthesisNote;
       } else {
         processedMessages.unshift({ role: 'system', content: synthesisNote.trim() });
+      }
+    }
+
+    // Inject the always-loaded skills list (Anthropic-style progressive
+    // disclosure: name + description live in the system prompt; the body is
+    // fetched on demand via the load_skill tool).
+    if (enabledToolNames.includes('load_skill')) {
+      const skillsBlock = buildSkillsPromptBlock();
+      if (skillsBlock) {
+        const systemMsg = processedMessages.find(m => m.role === 'system');
+        if (systemMsg) {
+          systemMsg.content += skillsBlock;
+        } else {
+          processedMessages.unshift({ role: 'system', content: skillsBlock.trim() });
+        }
       }
     }
 

@@ -494,6 +494,25 @@ DO NOT USE FOR: General web searches or questions not about the client's documen
     }
   },
 
+  load_skill: {
+    name: 'load_skill',
+    description: `Load the full instructions for a named skill. The list of available skills is in the [SKILLS_AVAILABLE] section of the system prompt — each entry shows a skill name and what it's for. When a user request matches one of those descriptions, call this tool with the matching name to fetch the skill's playbook BEFORE you produce your final response. Then follow the playbook.
+
+DO NOT call this tool speculatively. Only call when a skill clearly applies to the user's task. Calling unnecessarily wastes tokens.
+
+DO NOT call this tool more than once for the same skill in a single response.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Exact name of the skill to load, copied from the [SKILLS_AVAILABLE] list (e.g. "frontend-design", "email-drafting")'
+        }
+      },
+      required: ['name']
+    }
+  },
+
   date_time_diff: {
     name: 'date_time_diff',
     description: `Calculate the exact difference between two dates/times. Returns years, months, days, hours, minutes, and seconds between two points in time.
@@ -676,6 +695,13 @@ export function getEnabledToolNames(config) {
       'date_time_now',
       'date_time_diff'
     );
+  }
+
+  // Skills — only enabled if at least one skill is on disk and the toggle is on.
+  // The actual list-on-disk check happens in server.js because the loader has
+  // module-level state we don't want to import from a static helper here.
+  if (config.tools.skills) {
+    enabledTools.push('load_skill');
   }
 
   return enabledTools;

@@ -82,6 +82,9 @@ class Pipe:
         ENABLE_MEMORY: bool = Field(default=True, description="Enable per-user memory tools")
         ENABLE_DATE_TIME: bool = Field(default=True, description="Enable current-time and date-difference tools")
 
+        # Tool toggles — skills (Anthropic-style on-demand playbooks) -----
+        ENABLE_SKILLS: bool = Field(default=True, description="Enable on-demand skill playbooks (load_skill tool). The list of available skills is injected into the system prompt; bodies load only when triggered.")
+
         # Tool toggles — File Recall (OpenAI vector store) ----------------
         ENABLE_FILE_RECALL: bool = Field(default=False, description="Enable file recall over the document library")
         FILE_RECALL_INSTANCE_ID: str = Field(default="", description="File Recall instance ID for this client")
@@ -106,6 +109,7 @@ class Pipe:
             or v.ENABLE_SANDBOX
             or v.ENABLE_MEMORY
             or v.ENABLE_DATE_TIME
+            or v.ENABLE_SKILLS
             or has_fr
         )
 
@@ -157,6 +161,7 @@ class Pipe:
                     "memory": v.ENABLE_MEMORY,
                     "date_time": v.ENABLE_DATE_TIME,
                     "file_recall": v.ENABLE_FILE_RECALL,
+                    "skills": v.ENABLE_SKILLS,
                 },
             },
         }
