@@ -76,6 +76,7 @@ class Pipe:
         ENABLE_IMAGE_GENERATION: bool = Field(default=True, description="Enable AI image generation")
         ENABLE_IMAGE_EDIT: bool = Field(default=True, description="Enable AI image editing")
         ENABLE_IMAGE_BLEND: bool = Field(default=True, description="Enable AI image blending")
+        ENABLE_VIEW_IMAGE: bool = Field(default=True, description="Enable re-examining previously-shared images (no ComfyUI required)")
 
         # Tool toggles — persistent memory / time -------------------------
         ENABLE_MEMORY: bool = Field(default=True, description="Enable per-user memory tools")
@@ -98,7 +99,15 @@ class Pipe:
         has_web = bool(v.TAVILY_API_KEY) and (v.ENABLE_WEB_SEARCH or v.ENABLE_WEB_SCRAPE or v.ENABLE_DEEP_RESEARCH)
         has_img = bool(v.COMFYUI_BASE_URL) and (v.ENABLE_IMAGE_GENERATION or v.ENABLE_IMAGE_EDIT or v.ENABLE_IMAGE_BLEND)
         has_fr = v.ENABLE_FILE_RECALL and bool(v.FILE_RECALL_INSTANCE_ID)
-        return has_web or has_img or v.ENABLE_SANDBOX or v.ENABLE_MEMORY or v.ENABLE_DATE_TIME or has_fr
+        return (
+            has_web
+            or has_img
+            or v.ENABLE_VIEW_IMAGE
+            or v.ENABLE_SANDBOX
+            or v.ENABLE_MEMORY
+            or v.ENABLE_DATE_TIME
+            or has_fr
+        )
 
     async def pipe(
         self,
@@ -144,6 +153,7 @@ class Pipe:
                     "image_generation": v.ENABLE_IMAGE_GENERATION,
                     "image_edit": v.ENABLE_IMAGE_EDIT,
                     "image_blend": v.ENABLE_IMAGE_BLEND,
+                    "view_image": v.ENABLE_VIEW_IMAGE,
                     "memory": v.ENABLE_MEMORY,
                     "date_time": v.ENABLE_DATE_TIME,
                     "file_recall": v.ENABLE_FILE_RECALL,

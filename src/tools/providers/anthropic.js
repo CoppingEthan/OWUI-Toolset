@@ -203,6 +203,29 @@ async function runTools(toolUseBlocks, config, { onToolCall, onToolResult, onToo
       });
     }
 
+    // If the executor returned image bytes (e.g. view_image), emit a
+    // mixed-content tool_result so the model sees the image inline.
+    if (!exec.error && Array.isArray(exec.images) && exec.images.length > 0) {
+      const blocks = [
+        { type: 'text', text: typeof exec.result === 'string' ? exec.result : JSON.stringify(exec.result || {}) },
+      ];
+      for (const img of exec.images) {
+        if (img && img.base64 && img.mediaType) {
+          blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
+          });
+        }
+      }
+      results.push({
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: blocks,
+        is_error: false,
+      });
+      continue;
+    }
+
     results.push({
       type: 'tool_result',
       tool_use_id: toolUse.id,

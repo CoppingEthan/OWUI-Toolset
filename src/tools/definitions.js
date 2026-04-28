@@ -223,6 +223,27 @@ AFTER COMPLETION: Always display the blended image to the user using markdown fo
     }
   },
 
+  view_image: {
+    name: 'view_image',
+    description: `Re-examine an image previously shared in this conversation. Past images are listed in the [Images available in this conversation] footer of the latest user message but are NOT visible to you inline anymore. Call this tool with one of those URLs to see the image again.
+
+USE WHEN: the user asks a follow-up about a previously-shared image, references an image you can no longer see ("look at it again", "what colour was X", "describe the second one"), or you need to verify a visual detail.
+
+DO NOT USE FOR: external web image URLs, images you've already analysed in the current turn, or images from other conversations.
+
+INPUT: the exact URL from the [Images available in this conversation] footer. The image will be re-inlined for vision in the same step.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        image_url: {
+          type: 'string',
+          description: 'Full URL of the image to view, copied verbatim from the [Images available in this conversation] footer.'
+        }
+      },
+      required: ['image_url']
+    }
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // Sandbox Code Execution Tools
   // ═══════════════════════════════════════════════════════════════════════════
@@ -614,6 +635,12 @@ export function getEnabledToolNames(config) {
     if (config.tools.image_blend) {
       enabledTools.push('image_blend');
     }
+  }
+
+  // view_image is always available when enabled — only re-reads images from
+  // local disk for this conversation, no external service needed.
+  if (config.tools.view_image) {
+    enabledTools.push('view_image');
   }
 
   // Sandbox tools - always available when enabled (no external service dependency)

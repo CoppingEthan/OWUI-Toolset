@@ -11,7 +11,7 @@
 
 import * as sandbox from './sandbox/tools.js';
 import { executeWebSearch, executeWebScrape, executeDeepResearch } from './executors/web.js';
-import { executeImageGeneration, executeImageEdit, executeImageBlend } from './executors/images.js';
+import { executeImageGeneration, executeImageEdit, executeImageBlend, executeViewImage } from './executors/images.js';
 import { executeMemoryRetrieve, executeMemoryCreate, executeMemoryUpdate, executeMemoryDelete } from './executors/memory.js';
 import { executeDateTimeNow, executeDateTimeDiff } from './executors/date-time.js';
 import { executeFileRecallSearch } from './executors/file-recall.js';
@@ -28,6 +28,9 @@ const HANDLERS = {
   image_generation:   (p, c, k) => executeImageGeneration(p, c, k),
   image_edit:         (p, c, k) => executeImageEdit(p, c, k),
   image_blend:        (p, c, k) => executeImageBlend(p, c, k),
+
+  // View image (re-inline previously-shared image for LLM vision)
+  view_image:         (p, c)    => executeViewImage(p, c),
 
   // Sandbox
   sandbox_execute:    (p, c, k) => sandbox.executeSandboxCommand(p, c, k),

@@ -77,6 +77,11 @@ function toResponsesInput(messages) {
 
 async function runTools(toolCalls, config, { onToolCall, onToolResult, onToolOutput, onSource }) {
   const results = [];
+  // Responses API function outputs are text-only, so images returned by
+  // executors (e.g. view_image) get appended as a single synthetic user
+  // message after all function_call_outputs.
+  const pendingImages = [];
+
   for (const tc of toolCalls) {
     const args = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments;
 
@@ -113,14 +118,37 @@ async function runTools(toolCalls, config, { onToolCall, onToolResult, onToolOut
       });
     }
 
+    if (!exec.error && Array.isArray(exec.images) && exec.images.length > 0) {
+      for (const img of exec.images) {
+        if (img && img.base64 && img.mediaType) pendingImages.push(img);
+      }
+    }
+
     results.push({
       type: 'function_call_output',
       call_id: tc.call_id,
       output: exec.error
         ? JSON.stringify({ error: exec.error })
-        : JSON.stringify({ result: exec.result, sources: exec.sources }),
+        : JSON.stringify({
+            result: exec.result,
+            sources: exec.sources,
+            ...(exec.images?.length ? { has_image: true } : {}),
+          }),
     });
   }
+
+  if (pendingImages.length > 0) {
+    results.push({
+      type: 'message',
+      role: 'user',
+      content: pendingImages.map(img => ({
+        type: 'input_image',
+        image_url: `data:${img.mediaType};base64,${img.base64}`,
+        detail: 'auto',
+      })),
+    });
+  }
+
   return results;
 }
 
